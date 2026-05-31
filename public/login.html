@@ -7,6 +7,9 @@
     <link rel="icon" type="image/svg+xml" href="Assets/notemore.svg">
     <link rel="alternate icon" type="image/png" href="Assets/notemore.png">
     <link rel="apple-touch-icon" href="Assets/notemore.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Patrick+Hand&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="Assets/styles.css">
     <script>
         (function() { // Initialize theme immediately - Prevents theme flicker
@@ -19,7 +22,7 @@
         })();
     </script>
 </head>
-<body class="light-mode">
+<body>
     <div class="container login-container">
         <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
             <svg id="moon-icon" class="moon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -41,6 +44,7 @@
         </button>
         <div id="login-content">
             <div class="pin-header">
+                <img src="Assets/notemore.svg" alt="NoteMore logo" class="brand-logo login-brand-logo">
                 <h1 id="site-title">NoteMore</h1>
                 <h2 id="pin-description">Enter PIN</h2>
             </div>
