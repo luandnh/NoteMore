@@ -246,6 +246,60 @@ main {
     transition: var(--transition);
 }
 
+#notion-editor {
+    height: 100%;
+    background: var(--textarea-bg);
+    color: var(--text-color);
+    display: flex;
+    flex-direction: column;
+}
+
+#notion-editor .ql-toolbar.ql-snow {
+    border: none;
+    border-bottom: 1px solid var(--secondary-color);
+    background: var(--header-bg);
+}
+
+#notion-editor .ql-container.ql-snow {
+    border: none;
+    height: auto;
+    flex: 1;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+#notion-editor .ql-editor {
+    background: var(--textarea-bg);
+    color: var(--text-color);
+    min-height: calc(100vh - 14rem);
+    padding: 1.25rem;
+    line-height: 1.6;
+}
+
+#notion-editor .ql-editor.ql-blank::before {
+    color: #9ca3af;
+    font-style: normal;
+}
+
+#notion-editor .ql-editor img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+}
+
+#notion-editor .ql-snow .ql-picker,
+#notion-editor .ql-snow .ql-stroke,
+#notion-editor .ql-snow .ql-fill,
+#notion-editor .ql-snow .ql-picker-label {
+    color: var(--text-color);
+    stroke: var(--text-color);
+}
+
+[data-theme="dark"] #notion-editor .ql-snow .ql-picker-options {
+    background: var(--modal-bg);
+    border-color: var(--secondary-color);
+    color: var(--text-color);
+}
+
 /* Split view wrapper */
 .editor-preview-wrapper {
     display: flex;

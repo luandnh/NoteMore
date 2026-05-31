@@ -186,6 +186,12 @@ app.use('/css/@highlightjs/github-dark.min.css', express.static(
 app.use('/css/@highlightjs/github.min.css', express.static(
     path.join(__dirname, 'node_modules/@highlightjs/cdn-assets/styles/github.min.css')
 ));
+app.use('/vendor/quill', express.static(
+    path.join(__dirname, 'node_modules/quill/dist')
+));
+app.use('/vendor/turndown', express.static(
+    path.join(__dirname, 'node_modules/turndown/dist')
+));
 
 // Future enhancement: Support for all highlight.js themes
 // Currently only serving light/dark GitHub themes for consistency

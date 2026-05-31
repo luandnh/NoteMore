@@ -9,6 +9,7 @@
     <link rel="apple-touch-icon" href="Assets/dumbpad.png">
     <link rel="stylesheet" href="Assets/styles.css">
     <link rel="stylesheet" href="Assets/preview-styles.css">
+    <link rel="stylesheet" href="/vendor/quill/quill.snow.css">
     <link rel="manifest" href="Assets/manifest.json">
     <script>
         (function() { // Initialize theme immediately - Prevents theme flicker
@@ -112,7 +113,7 @@
                             <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
                         </svg>
                     </button>
-                    <button id="preview-markdown" class="icon-button" aria-label="Toggle preview pane" data-tooltip="Markdown preview ({shortcut})" data-shortcuts='{"win": "ctrl+alt+m", "mac": "ctrl+cmd+m"}'>
+                    <button id="preview-markdown" class="icon-button" aria-label="Export markdown" data-tooltip="Export markdown ({shortcut})" data-shortcuts='{"win": "ctrl+alt+m", "mac": "ctrl+cmd+m"}'>
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"
                             stroke-linecap="round" stroke-linejoin="round">
                             <path stroke="none" d="M0 0h24v24H0z" fill="none" />
@@ -128,13 +129,7 @@
             <div class="workspace-layout">
                 <div id="editor-preview-wrapper" class="editor-preview-wrapper">
                     <div id="editor-container" class="editor-container">
-                        <textarea id="editor" placeholder="Start typing your notes here..." spellcheck="true" autofocus></textarea>
-                    </div>
-                    <div id="resize-handle" class="resize-handle" style="display: none;">
-                        <div class="resize-handle-line"></div>
-                    </div>
-                    <div id="preview-container" class="preview-container" style="display: none;">
-                        <div id="preview-pane"></div>
+                        <div id="notion-editor"></div>
                     </div>
                 </div>
 
@@ -234,6 +229,8 @@
             </div>
         </div>
     </div>
-    <script src="app.js" type="module"></script>
+    <script src="/vendor/quill/quill.js"></script>
+    <script src="/vendor/turndown/turndown.js"></script>
+    <script src="notion-editor-app.js" type="module"></script>
 </body>
 </html> 
