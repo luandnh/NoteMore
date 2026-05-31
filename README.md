@@ -5,6 +5,7 @@ A simple, modern notepad application with auto-save, optional PIN protection, an
 ![NoteMore preview](docs/preview.png)
 
 <p align="center">
+  <a href="https://github.com/luandnh/NoteMore/actions/workflows/docker-publish.yml" target="_blank"><img src="https://github.com/luandnh/NoteMore/actions/workflows/docker-publish.yml/badge.svg" alt="CI and Docker Publish" /></a>
   <img src="https://img.shields.io/badge/node-%3E%3D20-43853D?logo=node.js&logoColor=white" alt="Node.js Version" />
   <img src="https://img.shields.io/badge/docker-supported-2496ED?logo=docker&logoColor=white" alt="Docker Supported" />
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License" />
