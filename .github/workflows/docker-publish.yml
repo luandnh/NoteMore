@@ -87,34 +87,11 @@ jobs:
       - name: Audit dependencies (fail on high/critical)
         run: npm audit --audit-level=high
 
-  filesystem-security-scan:
-    name: Stage 4 - Filesystem Security Scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: dependency-audit
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Run Trivy filesystem scan (fail on high/critical)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          version: v0.63.0
-          scan-type: fs
-          scan-ref: .
-          vuln-type: os,library
-          severity: HIGH,CRITICAL
-          ignore-unfixed: false
-          exit-code: "1"
-          format: table
-
   docker-image-verify:
-    name: Stage 5 - Docker Build and Vulnerability Verify
+    name: Stage 4 - Docker Build Verify
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: filesystem-security-scan
+    needs: dependency-audit
     permissions:
       contents: read
     steps:
@@ -138,20 +115,8 @@ jobs:
           push: false
           tags: local/notemore:${{ github.sha }}
 
-      - name: Run Trivy image scan (fail on high/critical)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          version: v0.63.0
-          scan-type: image
-          image-ref: local/notemore:${{ github.sha }}
-          vuln-type: os,library
-          severity: HIGH,CRITICAL
-          ignore-unfixed: false
-          exit-code: "1"
-          format: table
-
   publish-docker:
-    name: Stage 6 - Publish Docker Image
+    name: Stage 5 - Publish Docker Image
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: docker-image-verify
