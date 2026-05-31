@@ -1,17 +1,158 @@
-name: Build and Push Docker Image
+name: CI and Docker Publish
 
 on:
   push:
-    branches:
-      - main # Trigger the workflow on pushes to the main branch
+    tags:
+      - "v*.*.*"
 
 env:
+  NODE_VERSION: "24"
   DOCKER_IMAGE: luandnh1998/notemore
   PLATFORMS: linux/amd64,linux/arm64
 
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-push:
+  validate-tag:
+    name: Stage 1 - Validate Release Tag
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Validate semver tag format (vX.Y.Z)
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Invalid release tag: $TAG"
+            echo "Expected format: vX.Y.Z (example: v1.2.3)"
+            exit 1
+          fi
+          echo "Valid semver tag detected: $TAG"
+
+  build-and-check:
+    name: Stage 2 - Build and Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: validate-tag
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build --if-present
+
+      - name: Run generic checks
+        run: npm run check --if-present
+
+      - name: Run lint
+        run: npm run lint --if-present
+
+      - name: Run tests
+        run: npm test --if-present
+
+  dependency-audit:
+    name: Stage 3 - Dependency Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build-and-check
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies (fail on high/critical)
+        run: npm audit --audit-level=high
+
+  filesystem-security-scan:
+    name: Stage 4 - Filesystem Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: dependency-audit
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan (fail on high/critical)
+        uses: aquasecurity/trivy-action@0.31.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "1"
+
+  docker-image-verify:
+    name: Stage 5 - Docker Build and Vulnerability Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: filesystem-security-scan
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64,amd64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build local verification image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: local/notemore:${{ github.sha }}
+
+      - name: Run Trivy image scan (fail on high/critical)
+        uses: aquasecurity/trivy-action@0.31.0
+        with:
+          scan-type: image
+          image-ref: local/notemore:${{ github.sha }}
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "1"
+
+  publish-docker:
+    name: Stage 6 - Publish Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: docker-image-verify
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,18 +166,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: |
-            image=moby/buildkit:latest
-            network=host
-      
-      - name: Cache npm dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -44,39 +173,23 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract version from package.json
-        id: package_version
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "Extracted version: $VERSION"
-
-      - name: Set Docker tags
-        id: docker_meta
-        run: |
-          # Always add the version tag
-          echo "VERSION_TAG=${{ env.DOCKER_IMAGE }}:${{ steps.package_version.outputs.VERSION }}" >> $GITHUB_OUTPUT
-          
-          # Add branch-specific tags
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            echo "ADDITIONAL_TAG=${{ env.DOCKER_IMAGE }}:latest" >> $GITHUB_OUTPUT
-            echo "Using tags: ${{ steps.package_version.outputs.VERSION_TAG }}, ${{ env.DOCKER_IMAGE }}:latest"
-          elif [ "${{ github.ref }}" = "refs/heads/testing" ]; then
-            echo "ADDITIONAL_TAG=${{ env.DOCKER_IMAGE }}:testing" >> $GITHUB_OUTPUT
-            echo "Using tags: ${{ env.DOCKER_IMAGE }}:${{ steps.package_version.outputs.VERSION }}, ${{ env.DOCKER_IMAGE }}:testing"
-          else
-            echo "Using tag: ${{ env.DOCKER_IMAGE }}:${{ steps.package_version.outputs.VERSION }}"
-          fi
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
 
       - name: Build and Push Multi-Platform Image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: ${{ env.PLATFORMS }}
           push: true
-          tags: |
-            ${{ steps.docker_meta.outputs.VERSION_TAG}}
-            ${{ steps.docker_meta.outputs.ADDITIONAL_TAG }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
