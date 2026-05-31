@@ -6,7 +6,7 @@ const ASSETS_DIR = path.join(PUBLIC_DIR, "Assets");
 function getFiles(dir, basePath = "/") {
   let fileList = [];
   const files = fs.readdirSync(dir);
-  const excludeList = [".DS_Store"]; // Add files or patterns to exclude here
+  const excludeList = [".DS_Store", "notemore.svg"]; // Add files or patterns to exclude here
 
   files.forEach((file) => {
     const filePath = path.join(dir, file);

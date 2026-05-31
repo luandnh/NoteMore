@@ -1,58 +1,54 @@
 # NoteMore
 
-A stupid simple, no auth (unless you want it!), modern notepad application with auto-save functionality and dark mode support.
+A simple, modern notepad application with auto-save, optional PIN protection, and dark mode support.
+
+![NoteMore preview](docs/preview.png)
 
 <p align="center">
-  <img src="https://img.shields.io/github/package-json/v/luandnh1998/notemore" alt="GitHub package.json version" />
-  <a href="https://hub.docker.com/r/luandnh1998/notemore" target="_blank"><img src="https://img.shields.io/docker/v/luandnh1998/notemore?logo=docker&label=Docker" alt="Docker Image Version" /></a>
-  <img src="https://img.shields.io/docker/pulls/luandnh1998/notemore" alt="Docker Pulls" />
+  <img src="https://img.shields.io/badge/node-%3E%3D20-43853D?logo=node.js&logoColor=white" alt="Node.js Version" />
+  <img src="https://img.shields.io/badge/docker-supported-2496ED?logo=docker&logoColor=white" alt="Docker Supported" />
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License" />
-  <img src="https://img.shields.io/github/actions/workflow/status/luandnh1998/notemore/docker-publish.yml" alt="GitHub Actions Workflow Status" />
-  <!-- <a href="https://notemore.dumbware.io/" target="_blank">
-    <img alt="Static Badge" src="https://img.shields.io/badge/demo-site?label=notemore" />
-  </a> -->
 </p>
-
-![notemore](https://github.com/user-attachments/assets/3d880a0b-bbee-4794-ae2a-1b7b79335dde)
 
 ## Table of Contents
 
+- [Product Update (May 2026)](#product-update-may-2026)
 - [Features](#features)
 - [Quick Start](#quick-start)
   - [Prerequisites](#prerequisites)
-  - [Option 1: Docker](#option-1-docker-for-dummies)
-  - [Option 2: Docker Compose](#option-2-docker-compose-for-dummies-who-like-customizing)
-  - [Option 3: Running Locally](#option-3-running-locally-for-developers)
-- [Important: Docker Permissions](#upgrading-from-previous-versions)
+  - [Option 1: Docker](#option-1-docker)
+  - [Option 2: Docker Compose](#option-2-docker-compose)
+  - [Option 3: Run Locally](#option-3-run-locally)
+- [Docker Permissions](#docker-permissions)
 - [Configuration](#configuration)
 - [Security](#security)
 - [Technical Details](#technical-details)
+- [Usage](#usage)
 - [Links](#links)
 - [Contributing](#contributing)
-- [Future Features](#future-features)
+- [Enhancement Ideas](#enhancement-ideas)
+
+## Product Update (May 2026)
+
+- UI refreshed to a clean sketch style with improved readability.
+- Main workspace simplified to 2 columns (editor + actions/files panel).
+- Quill toolbar layout and contrast fixes for both light and dark themes.
+- Runtime branding switched to PNG logo (`notemore.png`) for favicon and in-app logo.
+- Upload manager panel and modal/input controls visually aligned with the new style.
 
 ## Features
 
-- Simple, clean interface
-- Auto-saving
-- Dark mode support
-- Responsive design
-- Docker support
-- Optional PIN protection (4-10 digits)
-- File-based storage
-- Data persistence across updates
-- Markdown Formatting with enhanced support
-  - GitHub-style alert blocks (Note, Tip, Important, Warning, Caution)
-  - Extended table formatting
-  - Auto-expand collapsible details in print (configurable)
-  - Code syntax highlighting in `fenced codeblocks`
-- Direct notepad linking with URL parameters
-- Copy shareable notepad links
-- Browser navigation support (back/forward buttons)
-- Fuzzy Search (by filename and file contents)
-- PWA Support with automatic cache updates
-- Attach/upload files and images directly into notes
-- Paste image/files from clipboard to auto-upload and insert markdown links
+- Clean sketch UI (light/dark) with responsive layout
+- WYSIWYG editor (Quill) with markdown storage compatibility
+- Auto-save with save feedback and periodic persistence
+- Multiple notepads with rename/delete/download/print actions
+- Direct note links via URL and browser history navigation
+- Fuzzy search across note names and content
+- Upload manager (files + images) with preview/download/delete
+- Drag-and-drop + clipboard paste uploads into editor
+- Optional PIN protection (4-10 digits) with lockout safeguards
+- PWA support with manifest + service worker cache updates
+- Docker and Docker Compose deployment support
 
 ## Quick Start
 
@@ -61,29 +57,32 @@ A stupid simple, no auth (unless you want it!), modern notepad application with 
 - Docker (recommended)
 - Node.js >=20.0.0 (for local development)
 
-### Option 1: Docker (For Dummies)
+### Option 1: Docker
 
 ```bash
-# Pull and run with one command
+# Build locally and run
+docker build -t notemore:latest .
+
 docker run -p 3000:3000 \
   -v ./data:/app/data \
-  luandnh1998/notemore:latest
+  notemore:latest
 ```
 
 1. Go to http://localhost:3000
 2. Start typing - Your notes auto-save
-3. Marvel at how dumb easy this was
+3. Verify your first note is saved
 
-> **⚠️ Note**: If the container crashes with permission errors, see [Docker Permissions](#upgrading-from-previous-versions) section below.
+> **⚠️ Note**: If the container crashes with permission errors, see [Docker Permissions](#docker-permissions) below.
 
-### Option 2: Docker Compose (For Dummies who like customizing)
+### Option 2: Docker Compose
 
 Create a `docker-compose.yml` file:
 
 ```yaml
 services:
   notemore:
-    image: luandnh1998/notemore:latest
+    image: notemore:latest
+    build: .
     container_name: notemore
     restart: unless-stopped
     ports:
@@ -106,7 +105,7 @@ services:
       # PAGE_HISTORY_COOKIE_AGE: ${NOTEMORE_PAGE_HISTORY_COOKIE_AGE:-365} # Customize age of cookie to show the last notepad opened (default 365 | max 400) in days - shows default notepad on load if expired
       # MAX_UPLOAD_SIZE_MB: ${NOTEMORE_MAX_UPLOAD_SIZE_MB:-10} # Max size per uploaded file in MB
       # MAX_UPLOAD_FILES: ${NOTEMORE_MAX_UPLOAD_FILES:-6} # Max number of files per upload request
-      
+
       # MARKDOWN CODE SYNTAX HIGHLIGHTING (only use below if you want to restrict to specific languages):
       # By default, NoteMore includes support for all ~180 languages supported by highlight.js.
       # view entire list and usage in /docs/MARKDOWN_SYNTAX_HIGHLIGHTING_USAGE.md
@@ -121,11 +120,11 @@ docker compose up -d
 
 1. Go to http://localhost:3000
 2. Start typing - Your notes auto-save
-3. Rejoice in the glory of your dumb notes
+3. Confirm notes are saved correctly
 
-> **⚠️ Note**: If the container crashes with permission errors, see [Docker Permissions](#upgrading-from-previous-versions) section below.
+> **⚠️ Note**: If the container crashes with permission errors, see [Docker Permissions](#docker-permissions) below.
 
-### Option 3: Running Locally (For Developers)
+### Option 3: Run Locally
 
 1. Install dependencies:
 
@@ -153,17 +152,17 @@ npm start
 If you're using Windows PowerShell with Docker, use this format for paths:
 
 ```powershell
-docker run -p 3000:3000 -v "${PWD}\data:/app/data" luandnh1998/notemore:latest
+docker run -p 3000:3000 -v "${PWD}\data:/app/data" notemore:latest
 ```
 
-## Upgrading from Previous Versions
+## Docker Permissions
 
 ### ⚠️ Important: Docker Permission Issues (New Installations & Upgrades)
 
-As of [PR #76](https://github.com/luandnh1998/notemore/pull/76), NoteMore now runs as a non-root user (UID 1000) inside the Docker container for improved security. This can cause permission issues in two scenarios:
+NoteMore runs as a non-root user (UID 1000) inside the Docker container for improved security. This can cause permission issues in two scenarios:
 
-1. **Upgrading from a previous version** - Existing data directory may have incorrect permissions, causing notepads to appear blank ([Issue #74](https://github.com/luandnh1998/notemore/issues/74))
-2. **Fresh installation** - Docker may create the data directory with host user permissions that don't match UID 1000, causing container restart loops with `EACCES: permission denied` errors ([Issue #79](https://github.com/luandnh1998/notemore/issues/79))
+1. **Upgrading from a previous version**: Existing data directory may have incorrect permissions, causing notepads to appear blank
+2. **Fresh installation**: Docker may create the data directory with host user permissions that do not match UID 1000, causing container restart loops with `EACCES: permission denied` errors
 
 #### Symptoms
 
@@ -177,6 +176,7 @@ As of [PR #76](https://github.com/luandnh1998/notemore/pull/76), NoteMore now ru
 Set the ownership of your data directory to match the container's non-root user (UID 1000):
 
 **Linux/macOS:**
+
 ```bash
 # Stop the container first
 docker stop notemore
@@ -186,6 +186,7 @@ sudo chown -R 1000:1000 /path/to/your/data
 ```
 
 **Example for common setups:**
+
 ```bash
 # If using the default ./data directory
 sudo chown -R 1000:1000 ./data
@@ -198,6 +199,7 @@ sudo chown -R 1000:1000 /mnt/user/appdata/notemore
 ```
 
 **Windows (Docker Desktop):**
+
 ```powershell
 # Windows users typically don't need to change permissions
 # Docker Desktop handles volume permissions automatically
@@ -208,6 +210,7 @@ sudo chown -R 1000:1000 /mnt/user/appdata/notemore
 For new installations, create the data directory with correct permissions **before** starting the container:
 
 **Linux/macOS:**
+
 ```bash
 # Create data directory
 mkdir -p ./data
@@ -220,6 +223,7 @@ docker compose up -d
 ```
 
 **Windows (Docker Desktop):**
+
 ```powershell
 # No special setup needed - Docker Desktop handles permissions automatically
 docker compose up -d
@@ -230,6 +234,7 @@ docker compose up -d
 After updating permissions, verify everything is working:
 
 1. **Start/Restart the container:**
+
    ```bash
    docker restart notemore
    # or if starting fresh
@@ -237,14 +242,17 @@ After updating permissions, verify everything is working:
    ```
 
 2. **Check container logs** (should start without errors):
+
    ```bash
    docker logs notemore
    ```
 
 3. **Verify file ownership inside container:**
+
    ```bash
    docker exec notemore ls -la /app/data
    ```
+
    You should see files owned by `node` or UID `1000`
 
 4. **Test the application** by accessing http://localhost:3000 and creating a test notepad
@@ -252,11 +260,12 @@ After updating permissions, verify everything is working:
 #### Why This Change?
 
 Running containers as non-root users is a security best practice that:
+
 - Limits potential damage from container escapes
 - Reduces attack surface
 - Aligns with security compliance standards
 
-## Features
+## Core Capabilities (Detailed)
 
 - 📝 Auto-saving notes
 - 🌓 Dark/Light mode support
@@ -287,8 +296,8 @@ Running containers as non-root users is a security best practice that:
 | ----------------------- | ------------------------------------------------------------ | --------------------- | -------- |
 | PORT                    | Server port                                                  | 3000                  | No       |
 | BASE_URL                | Base URL for the application                                 | http://localhost:PORT | Yes      |
-| PIN_CODE             | PIN protection (4-10 digits)                                 | None                  | No       |
-| SITE_TITLE              | Site title displayed in header                               | NoteMore               | No       |
+| PIN_CODE                | PIN protection (4-10 digits)                                 | None                  | No       |
+| SITE_TITLE              | Site title displayed in header                               | NoteMore              | No       |
 | NODE_ENV                | Node environment mode (development or production)            | production            | No       |
 | ALLOWED_ORIGINS         | Allowed CORS origins (`*` for all or comma-separated list)   | \*                    | No       |
 | LOCKOUT_TIME            | Lockout time after max PIN attempts (in minutes)             | 15                    | No       |
@@ -354,11 +363,13 @@ TRUSTED_PROXY_IPS=173.245.48.0,103.21.244.0,103.22.200.0,...
 To find your proxy's IP address:
 
 **Docker:**
+
 ```bash
 docker network inspect bridge | grep Gateway
 ```
 
 **Check incoming connections:**
+
 ```bash
 # While NoteMore is running, check who's connecting
 netstat -tn | grep :3000
@@ -402,7 +413,7 @@ Access settings via the gear icon (⚙️) in the header or use keyboard shortcu
 | **Auto-save Status Interval**  | Time interval for auto-save notifications (0 = disabled) | 1000ms   | Any number (milliseconds) |
 | **Remote Connection Messages** | Show notifications when users connect/disconnect         | Enabled  | Enabled/Disabled          |
 | **Disable Print Expansion**    | Prevent auto-expanding collapsed sections when printing  | Disabled | Enabled/Disabled          |
-| **Default Markdown Preview**   | Default view when loading NoteMore (Client-based)         | Editor   | Editor, Split, Full       |
+| **Default Markdown Preview**   | Default view when loading NoteMore (Client-based)        | Editor   | Editor, Split, Full       |
 
 ### Notepad Management
 
@@ -411,7 +422,7 @@ Access settings via the gear icon (⚙️) in the header or use keyboard shortcu
 - **Auto-save**: Changes are automatically saved every 300ms after you stop typing, with periodic saves every 2 seconds
 - **Persistence**: All settings are stored in your browser's local storage and persist across sessions
 
-## Technical Details
+## Architecture Summary
 
 ### Stack
 
@@ -474,67 +485,6 @@ The `data` directory contains:
 - **Download**: Click download button or `Ctrl+Alt+A` (or `Cmd+Ctrl+A`) for .txt/.md export
 - **Print**: `Ctrl+P` (or `Cmd+P`) with enhanced formatting and auto-expanded collapsible sections
 
-### Preview Modes
-
-Swap between different modes using the 3-way markdown toggle button: (Editor, Split, Full)
-
-| Editor                                                                                                             | Split Preview                                                                                                     | Full Preview                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| <img alt="editor-preview" src="https://github.com/user-attachments/assets/dfa494a5-2caa-4e29-84a1-82d16310c6c4" /> | <img alt="split-preview" src="https://github.com/user-attachments/assets/a0f4b559-f1b7-4b1b-abe6-5289d5d8d494" /> | <img alt="full-preview" src="https://github.com/user-attachments/assets/2d6c14f2-6906-41c5-92f4-7a221d3911c6" /> |
-
-You can also set your default preview mode in settings.
-
-<img width="30%" alt="image" src="https://github.com/user-attachments/assets/ccc2b41c-a817-4367-b661-e96f05490566" />
-
-### Markdown Formatting
-
-NoteMore now supports enhanced markdown features:
-
-#### GitHub-Style Alert Blocks
-
-```markdown
-> [!NOTE]
-> This is a note alert block
-
-> [!TIP]
-> This is a tip alert block
-
-> [!IMPORTANT]
-> This is an important alert block
-
-> [!WARNING]
-> This is a warning alert block
-
-> [!CAUTION]
-> This is a caution alert block
-```
-
-#### Extended Table Support
-
-- Advanced table formatting with alignment
-- Enhanced styling for better readability
-
-#### Collapsible Details
-
-```markdown
-<details>
-<summary>Click to expand</summary>
-Content that will be automatically expanded when printing
-</details>
-```
-
-#### Code Syntax Highlighting
-
-- Uses highlight.js for syntax highlighting using fenced code blocks
-- Defaults to all supported languages (configured via `HIGHLIGHT_LANGUAGES` environment variable if you would like to restrict to specific languages)
-- Read more and view examples in /docs/MARKDOWN_SYNTAX_HIGHLIGHTING_USAGE.md
-
-````markdown
-```javascript
-console.log("Hello, world!");
-```
-````
-
 ### URL Parameters
 
 - **Direct notepad linking**: `?id=notepadname` - Opens a specific notepad by name (case-insensitive)
@@ -551,8 +501,8 @@ console.log("Hello, world!");
 
 ## Links
 
-- GitHub: [github.com/luandnh1998/notemore](https://github.com/luandnh1998/notemore)
-- Docker Hub: [hub.docker.com/r/luandnh1998/notemore](https://hub.docker.com/r/luandnh1998/notemore)
+- Repository: use this workspace's Git remote
+- Docker: build locally with `docker build -t notemore:latest .`
 
 ## Contributing
 
@@ -564,28 +514,19 @@ console.log("Hello, world!");
 
 See Development Guide for local setup and guidelines.
 
----
+## Enhancement Ideas
 
-Made with ❤️ by DumbWare.io
+Potential improvements that can be added next:
 
-## 🌐 Check Us Out
+- Rich text collaboration presence: better cursor labels, user colors, and reconnect UX.
+- Upload lifecycle upgrades: rename file, move between groups, and multi-file drag ordering.
+- Note organization: tags, favorites, pin-to-top, and archived notes.
+- Advanced editor tooling: slash command menu, templates/snippets, and keyboard shortcut cheat sheet.
+- Better search UX: filters (title/content/date), recent searches, and highlighted context jump.
+- Export enhancements: PDF export with theme-aware formatting and batch export.
+- Version history: per-note timeline with restore points and diff view.
+- Security additions: optional session timeout, PIN rotation reminder, and stricter CSP defaults.
+- Accessibility improvements: higher-contrast preset, reduced-motion mode, and screen-reader landmarks audit.
+- Multi-device sync option: optional pluggable backend sync providers.
 
-- **Website:** [dumbware.io](https://www.dumbware.io/)
-- **Join the Chaos:** [Discord](https://discord.gg/zJutzxWyq2) 💬
-
-## Support the Project
-
-<a href="https://www.buymeacoffee.com/dumbware" target="_blank">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60">
-</a>
-
-## Future Features
-
-- File attachments
-- Markdown code syntax highlighting
-
-> Got an idea? Open an issue or submit a PR
-
-```
-
-```
+Got an idea? Open an issue or submit a PR.
