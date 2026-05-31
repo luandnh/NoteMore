@@ -25,6 +25,7 @@ A simple, modern notepad application with auto-save, optional PIN protection, an
 - [Technical Details](#technical-details)
 - [Usage](#usage)
 - [Links](#links)
+- [Acknowledgements](#acknowledgements)
 - [Contributing](#contributing)
 - [Enhancement Ideas](#enhancement-ideas)
 
@@ -503,6 +504,10 @@ The `data` directory contains:
 
 - Repository: use this workspace's Git remote
 - Docker: build locally with `docker build -t notemore:latest .`
+
+## Acknowledgements
+
+- This project is based on ideas and direction from [DumbPad by DumbWareio](https://github.com/DumbWareio/DumbPad).
 
 ## Contributing
 
