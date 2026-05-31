@@ -45,6 +45,15 @@ const pageHistoryCookieAge = PAGE_HISTORY_COOKIE_AGE * 24 * 60 * 60 * 1000;
 const MAX_FILENAME_COLLISION_ATTEMPTS = 100; // Maximum attempts to resolve filename collisions
 const DEFAULT_MAX_UPLOAD_SIZE_MB = 10;
 const DEFAULT_MAX_UPLOAD_FILES = 6;
+const DEFAULT_MAX_JSON_BODY_MB = 15;
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.avif',
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.md'
+]);
+const BLOCKED_UPLOAD_EXTENSIONS = new Set([
+    '.exe', '.bin', '.app', '.msi', '.bat', '.cmd', '.com', '.scr', '.sh',
+    '.ps1', '.dmg', '.pkg', '.apk', '.jar', '.ipa'
+]);
 
 function parsePositiveInt(value, fallbackValue) {
     const parsed = parseInt(value, 10);
@@ -54,6 +63,8 @@ function parsePositiveInt(value, fallbackValue) {
 const MAX_UPLOAD_SIZE_MB = parsePositiveInt(process.env.MAX_UPLOAD_SIZE_MB, DEFAULT_MAX_UPLOAD_SIZE_MB);
 const MAX_UPLOAD_FILES = parsePositiveInt(process.env.MAX_UPLOAD_FILES, DEFAULT_MAX_UPLOAD_FILES);
 const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
+const MAX_JSON_BODY_MB = parsePositiveInt(process.env.MAX_JSON_BODY_MB, DEFAULT_MAX_JSON_BODY_MB);
+const JSON_BODY_LIMIT = `${MAX_JSON_BODY_MB}mb`;
 
 let notepads_cache = {
     notepads: [],
@@ -153,7 +164,8 @@ const corsOptions = getCorsOptions(BASE_URL);
 
 // Middleware setup
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: JSON_BODY_LIMIT }));
 app.use(cookieParser());
 
 // Serve static files
@@ -169,15 +181,15 @@ app.use('/js/marked-alert', express.static(
 app.use('/js/marked-highlight', express.static(
     path.join(__dirname, 'node_modules/marked-highlight/src')
 ));
-app.use('/js/@highlightjs/highlight.min.js', express.static(
-    path.join(__dirname, 'node_modules/@highlightjs/cdn-assets/es/highlight.min.js')
-));
+app.get('/js/@highlightjs/highlight.min.js', (req, res) => {
+    res.sendFile(path.join(__dirname, 'node_modules/@highlightjs/cdn-assets/highlight.min.js'));
+});
 // Dynamically serve highlight.js languages
 HIGHLIGHT_LANGUAGES.forEach(lang => {
     if (lang) {
-        app.use(`/js/@highlightjs/languages/${lang}.min.js`, express.static(
-            path.join(__dirname, 'node_modules/@highlightjs/cdn-assets/es/languages', `${lang}.min.js`)
-        ));
+        app.get(`/js/@highlightjs/languages/${lang}.min.js`, (req, res) => {
+            res.sendFile(path.join(__dirname, 'node_modules/@highlightjs/cdn-assets/languages', `${lang}.min.js`));
+        });
     }
 });
 app.use('/css/@highlightjs/github-dark.min.css', express.static(
@@ -627,6 +639,8 @@ app.get('/api/config', (req, res) => {
         uploadConfig: {
             maxUploadSizeMB: MAX_UPLOAD_SIZE_MB,
             maxUploadFiles: MAX_UPLOAD_FILES,
+            acceptedExtensions: Array.from(ALLOWED_UPLOAD_EXTENSIONS),
+            blockedExtensions: Array.from(BLOCKED_UPLOAD_EXTENSIONS),
         },
     });
 });
@@ -676,6 +690,30 @@ const upload = multer({
     limits: {
         fileSize: MAX_UPLOAD_SIZE_BYTES,
         files: MAX_UPLOAD_FILES,
+    },
+    fileFilter: (req, file, cb) => {
+        const originalName = typeof file.originalname === 'string' ? file.originalname : '';
+        const extension = path.extname(originalName).toLowerCase();
+
+        if (!extension) {
+            const noExtensionError = new Error('File must include a valid extension');
+            noExtensionError.code = 'UNSUPPORTED_FILE_TYPE';
+            return cb(noExtensionError);
+        }
+
+        if (BLOCKED_UPLOAD_EXTENSIONS.has(extension)) {
+            const blockedTypeError = new Error('Executable, binary, or app files are not allowed');
+            blockedTypeError.code = 'BLOCKED_FILE_TYPE';
+            return cb(blockedTypeError);
+        }
+
+        if (!ALLOWED_UPLOAD_EXTENSIONS.has(extension)) {
+            const unsupportedTypeError = new Error('Only images, PDF, DOC/DOCX, Excel, CSV, and Markdown files are allowed');
+            unsupportedTypeError.code = 'UNSUPPORTED_FILE_TYPE';
+            return cb(unsupportedTypeError);
+        }
+
+        return cb(null, true);
     },
 });
 
@@ -883,6 +921,36 @@ function escapeMarkdownText(value) {
         .replace(/\]/g, '\\]');
 }
 
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.avif']);
+
+function getUploadDisplayName(filename) {
+    const parsed = path.parse(filename);
+    const nameParts = parsed.name.split('-');
+
+    if (nameParts.length >= 3) {
+        const inferredName = nameParts.slice(2).join('-').trim();
+        if (inferredName) {
+            return `${inferredName}${parsed.ext}`;
+        }
+    }
+
+    return filename;
+}
+
+function createUploadDescriptor(filename, stats) {
+    const extension = path.extname(filename).toLowerCase();
+    const isImage = IMAGE_EXTENSIONS.has(extension);
+
+    return {
+        filename,
+        originalName: getUploadDisplayName(filename),
+        size: stats.size,
+        modifiedAt: stats.mtime.toISOString(),
+        url: `/api/uploads/${encodeURIComponent(filename)}`,
+        isImage,
+    };
+}
+
 // Watch for changes in notepads.json or .txt files
 fs.watch(DATA_DIR, (eventType, filename) => {
     if (typeof filename === 'string' && filename.endsWith('.txt')) indexNotepads();
@@ -923,6 +991,10 @@ app.post('/api/uploads', (req, res, next) => {
             return res.status(400).json({ error: err.message });
         }
 
+        if (err.code === 'BLOCKED_FILE_TYPE' || err.code === 'UNSUPPORTED_FILE_TYPE') {
+            return res.status(400).json({ error: err.message });
+        }
+
         console.error('Upload error:', err);
         return res.status(500).json({ error: 'Error uploading file(s)' });
     });
@@ -958,8 +1030,70 @@ app.post('/api/uploads', (req, res, next) => {
         uploadConfig: {
             maxUploadSizeMB: MAX_UPLOAD_SIZE_MB,
             maxUploadFiles: MAX_UPLOAD_FILES,
+            acceptedExtensions: Array.from(ALLOWED_UPLOAD_EXTENSIONS),
+            blockedExtensions: Array.from(BLOCKED_UPLOAD_EXTENSIONS),
         },
     });
+});
+
+// List uploaded attachments for management UI
+app.get('/api/uploads/list', async (req, res) => {
+    try {
+        await fs.mkdir(UPLOADS_DIR, { recursive: true });
+        const entries = await fs.readdir(UPLOADS_DIR, { withFileTypes: true });
+        const fileEntries = entries.filter(entry => entry.isFile());
+
+        const files = await Promise.all(fileEntries.map(async (entry) => {
+            const fullPath = path.join(UPLOADS_DIR, entry.name);
+            const stats = await fs.stat(fullPath);
+            return createUploadDescriptor(entry.name, stats);
+        }));
+
+        files.sort((a, b) => new Date(b.modifiedAt) - new Date(a.modifiedAt));
+
+        return res.json({
+            files,
+            uploadConfig: {
+                maxUploadSizeMB: MAX_UPLOAD_SIZE_MB,
+                maxUploadFiles: MAX_UPLOAD_FILES,
+                acceptedExtensions: Array.from(ALLOWED_UPLOAD_EXTENSIONS),
+                blockedExtensions: Array.from(BLOCKED_UPLOAD_EXTENSIONS),
+            },
+        });
+    } catch (error) {
+        console.error('Error reading uploads list:', error);
+        return res.status(500).json({ error: 'Error loading uploads list' });
+    }
+});
+
+// Delete an uploaded attachment
+app.delete('/api/uploads/:filename', async (req, res) => {
+    try {
+        const rawFilename = req.params.filename || '';
+        let decodedFilename = '';
+
+        try {
+            decodedFilename = decodeURIComponent(rawFilename);
+        } catch (decodeError) {
+            return res.status(400).json({ error: 'Invalid filename encoding' });
+        }
+
+        // Reject path traversal or invalid filename values
+        if (!decodedFilename || path.basename(decodedFilename) !== decodedFilename || decodedFilename.includes('\0')) {
+            return res.status(400).json({ error: 'Invalid filename' });
+        }
+
+        const fullPath = path.join(UPLOADS_DIR, decodedFilename);
+        await fs.unlink(fullPath);
+        return res.json({ success: true });
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            return res.status(404).json({ error: 'Upload not found' });
+        }
+
+        console.error('Error deleting upload:', error);
+        return res.status(500).json({ error: 'Error deleting upload' });
+    }
 });
 
 // Get list of notepads
@@ -1225,6 +1359,40 @@ app.get('/api/search', (req, res) => {
         totalPages: Math.ceil(results.length / pageSize),
         currentPage: page
     });
+});
+
+// Handle JSON parser errors in a user-friendly way
+app.use((err, req, res, next) => {
+    if (!err) {
+        return next();
+    }
+
+    if (err.type === 'entity.too.large') {
+        return res.status(413).json({
+            error: `Request payload too large. Max JSON body is ${MAX_JSON_BODY_MB}MB`,
+        });
+    }
+
+    if (err instanceof SyntaxError && Object.prototype.hasOwnProperty.call(err, 'body')) {
+        return res.status(400).json({ error: 'Invalid JSON payload' });
+    }
+
+    return next(err);
+});
+
+// Final fallback error handler to avoid leaking stacks to clients
+app.use((err, req, res, next) => {
+    if (res.headersSent) {
+        return next(err);
+    }
+
+    console.error('Unhandled server error:', err);
+
+    if (req.path.startsWith('/api/')) {
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+
+    return res.status(500).send('Internal server error');
 });
 
 // Helper function to find a notepad by ID

@@ -51,8 +51,9 @@ const installNewCache = async (version) => {
   try {
     const response = await fetch("/asset-manifest.json");
     const assets = await response.json();
+    const cacheableAssets = assets.filter((asset) => asset !== '/service-worker.js');
     const assetsToCache = [
-      ...assets,
+      ...cacheableAssets,
       // Dynamically added packages
       "/js/marked/marked.esm.js",
       "/js/marked-extended-tables/index.js",
@@ -169,6 +170,41 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  const requestUrl = new URL(event.request.url);
+  const isSameOrigin = requestUrl.origin === self.location.origin;
+
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
+  if (isSameOrigin && requestUrl.pathname === '/service-worker.js') {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    return;
+  }
+
+  const isNetworkFirstAsset = isSameOrigin && [
+    '/',
+    '/index.html',
+    '/app.js',
+    '/notion-editor-app.js',
+    '/js/@highlightjs/highlight.min.js',
+    '/Assets/styles.css',
+    '/Assets/preview-styles.css'
+  ].includes(requestUrl.pathname);
+
+  if (isNetworkFirstAsset) {
+    event.respondWith(
+      fetch(event.request)
+        .then(async (networkResponse) => {
+          const cache = await caches.open(getCacheName(APP_VERSION));
+          await cache.put(event.request, networkResponse.clone());
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       return cachedResponse || fetch(event.request);

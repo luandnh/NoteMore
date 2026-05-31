@@ -29,6 +29,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         attachFilesButton: document.getElementById('attach-files-button'),
         attachFilesInput: document.getElementById('attach-files-input'),
         attachFilesHelp: document.getElementById('attach-files-help'),
+        uploadsSelectAllBtn: document.getElementById('uploads-select-all'),
+        uploadsClearSelectionBtn: document.getElementById('uploads-clear-selection'),
+        uploadsDeleteSelectedBtn: document.getElementById('uploads-delete-selected'),
+        uploadsList: document.getElementById('uploads-list'),
+        uploadsTabs: document.querySelectorAll('.uploads-tab'),
+        uploadPreviewModal: document.getElementById('upload-preview-modal'),
+        uploadPreviewTitle: document.getElementById('upload-preview-title'),
+        uploadPreviewFrame: document.getElementById('upload-preview-frame'),
+        uploadPreviewImage: document.getElementById('upload-preview-image'),
+        uploadPreviewCloseBtn: document.getElementById('upload-preview-close'),
+        uploadPreviewDownloadBtn: document.getElementById('upload-preview-download'),
         editorRoot: document.getElementById('notion-editor'),
         toastContainer: document.getElementById('toast-container'),
         renameModal: document.getElementById('rename-modal'),
@@ -52,12 +63,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const QuillCtor = window.Quill;
     const TurndownServiceCtor = window.TurndownService;
+    const highlightJs = window.hljs;
 
     if (!QuillCtor || !TurndownServiceCtor) {
         const fallbackToaster = new ToastManager(elements.toastContainer);
         fallbackToaster.show('Editor library failed to load', 'error', true, 5000);
         return;
     }
+
+    function configureHighlightSyntax() {
+        if (!highlightJs) {
+            return false;
+        }
+
+        const versionString = String(highlightJs.versionString || '');
+        const majorVersion = parseInt(versionString.split('.')[0], 10);
+
+        // Quill expects highlight.js < v11 to use `useBR: false`.
+        if (!Number.isNaN(majorVersion) && majorVersion < 11) {
+            highlightJs.configure({ useBR: false });
+        }
+
+        return true;
+    }
+
+    const syntaxEnabled = configureHighlightSyntax();
 
     const toaster = new ToastManager(elements.toastContainer);
     const storage = new StorageManager();
@@ -67,6 +97,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         bulletListMarker: '-',
     });
 
+    function escapeHtmlAttribute(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    // Keep explicit image widths so resized images stay consistent across save/reload.
+    turndown.addRule('resizedImagesToHtml', {
+        filter(node) {
+            if (!node || node.nodeName !== 'IMG') {
+                return false;
+            }
+
+            const widthFromStyle = node.style?.width || '';
+            const widthFromAttr = node.getAttribute('width') || '';
+            return Boolean(widthFromStyle || widthFromAttr);
+        },
+        replacement(content, node) {
+            const src = escapeHtmlAttribute(node.getAttribute('src') || '');
+            const alt = escapeHtmlAttribute(node.getAttribute('alt') || '');
+            const widthCandidate = node.style?.width || node.getAttribute('width') || '';
+            const parsedWidth = parseInt(String(widthCandidate).replace('px', '').trim(), 10);
+            const width = Number.isNaN(parsedWidth) || parsedWidth <= 0 ? '' : ` width="${parsedWidth}"`;
+
+            return `<img src="${src}" alt="${alt}"${width} />`;
+        }
+    });
+
     let settings = loadSettings();
     let currentTheme = storage.load(THEME_KEY);
     let currentNotepadId = 'default';
@@ -74,9 +134,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     let isInitialLoad = true;
     let isSyncingEditor = false;
     let saveTimeout = null;
+    let uploadsFilter = 'all';
+    let uploadsCache = [];
     let uploadConfig = {
         maxUploadSizeMB: 10,
         maxUploadFiles: 6,
+        acceptedExtensions: [],
+        blockedExtensions: [],
+    };
+    const selectedUploadFilenames = new Set();
+    let previewedUpload = null;
+    const imageResizeState = {
+        target: null,
+        handle: null,
+        leftHandle: null,
+        rightHandle: null,
+        toolbar: null,
+        sizeLabel: null,
+        activeHandleMode: 'corner',
+        isResizing: false,
+        startX: 0,
+        startWidth: 0,
+    };
+    const fileDropState = {
+        overlay: null,
+        dragDepth: 0,
     };
 
     const quill = new QuillCtor(elements.editorRoot, {
@@ -90,6 +172,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ['link', 'image'],
                 ['clean']
             ],
+            syntax: syntaxEnabled,
             history: {
                 delay: 500,
                 maxStack: 100,
@@ -139,6 +222,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         imagePicker.click();
     });
 
+    setupImageResizeInteractions();
+    setupFileDropInteractions();
+
     const searchManager = new SearchManager(fetchWithPin, selectNotepad, closeAllModals);
 
     function detectOS() {
@@ -163,7 +249,744 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function updateUploadHelpText() {
-        elements.attachFilesHelp.textContent = `Paste images/files into editor, or attach up to ${uploadConfig.maxUploadFiles} files (${uploadConfig.maxUploadSizeMB}MB each).`;
+        const allowedTypes = uploadConfig.acceptedExtensions.length > 0
+            ? uploadConfig.acceptedExtensions.join(', ')
+            : 'images, .pdf, .docx, .xlsx, .csv, .md';
+
+        elements.attachFilesHelp.textContent = `Drag and drop, paste, or attach up to ${uploadConfig.maxUploadFiles} files (${uploadConfig.maxUploadSizeMB}MB each). Allowed: ${allowedTypes}. Click image to resize.`;
+    }
+
+    function updateUploadInputAccept() {
+        if (!elements.attachFilesInput) {
+            return;
+        }
+
+        const accepted = Array.isArray(uploadConfig.acceptedExtensions)
+            ? uploadConfig.acceptedExtensions.filter(Boolean)
+            : [];
+        elements.attachFilesInput.setAttribute('accept', accepted.join(','));
+    }
+
+    function updateUploadsSelectionControls() {
+        if (!elements.uploadsDeleteSelectedBtn) {
+            return;
+        }
+
+        const selectedCount = selectedUploadFilenames.size;
+        elements.uploadsDeleteSelectedBtn.textContent = `Delete selected (${selectedCount})`;
+        elements.uploadsDeleteSelectedBtn.disabled = selectedCount === 0;
+    }
+
+    function toggleUploadSelection(filename, isSelected) {
+        if (!filename) {
+            return;
+        }
+
+        if (isSelected) {
+            selectedUploadFilenames.add(filename);
+        } else {
+            selectedUploadFilenames.delete(filename);
+        }
+
+        updateUploadsSelectionControls();
+    }
+
+    function clearUploadSelection() {
+        selectedUploadFilenames.clear();
+        renderUploadsList();
+    }
+
+    function selectAllVisibleUploads() {
+        const visibleFiles = getFilteredUploads();
+        visibleFiles.forEach((file) => {
+            if (file.filename) {
+                selectedUploadFilenames.add(file.filename);
+            }
+        });
+        renderUploadsList();
+    }
+
+    function openUploadPreview(file) {
+        if (!file || !file.url || !elements.uploadPreviewModal) {
+            return;
+        }
+
+        // Close other modals but keep preview modal state intact.
+        document.querySelectorAll('.modal').forEach((modal) => {
+            if (modal !== elements.uploadPreviewModal) {
+                hideModal(modal);
+            }
+        });
+        searchManager.closeModal();
+
+        previewedUpload = file;
+        const fileName = file.originalName || file.filename || 'file';
+        elements.uploadPreviewTitle.textContent = `Preview: ${fileName}`;
+        elements.uploadPreviewImage.hidden = true;
+        elements.uploadPreviewFrame.hidden = true;
+
+        if (file.isImage) {
+            elements.uploadPreviewImage.src = file.url;
+            elements.uploadPreviewImage.alt = fileName;
+            elements.uploadPreviewImage.hidden = false;
+            elements.uploadPreviewFrame.src = 'about:blank';
+        } else {
+            elements.uploadPreviewFrame.src = file.url;
+            elements.uploadPreviewFrame.hidden = false;
+            elements.uploadPreviewImage.removeAttribute('src');
+        }
+
+        elements.uploadPreviewModal.classList.add('visible');
+        elements.uploadPreviewCloseBtn?.focus();
+    }
+
+    function closeUploadPreview() {
+        if (!elements.uploadPreviewModal) {
+            return;
+        }
+
+        elements.uploadPreviewFrame.src = 'about:blank';
+        elements.uploadPreviewImage.removeAttribute('src');
+        previewedUpload = null;
+        hideModal(elements.uploadPreviewModal);
+    }
+
+    async function deleteSelectedUploads() {
+        const selected = Array.from(selectedUploadFilenames).filter(Boolean);
+        if (selected.length === 0) {
+            toaster.show('Select files before deleting', 'error', false, 2200);
+            return;
+        }
+
+        const shouldDelete = window.confirm(`Delete ${selected.length} selected file(s)?`);
+        if (!shouldDelete) {
+            return;
+        }
+
+        const failures = [];
+        for (const filename of selected) {
+            try {
+                await deleteUpload(filename, { skipRender: true });
+            } catch (error) {
+                failures.push(filename);
+            }
+        }
+
+        selectedUploadFilenames.clear();
+        renderUploadsList();
+
+        if (failures.length > 0) {
+            toaster.show(`Deleted ${selected.length - failures.length}/${selected.length} files`, 'error', false, 3200);
+            return;
+        }
+
+        toaster.show(`Deleted ${selected.length} files`, 'success');
+    }
+
+    function formatBytes(bytes) {
+        if (!bytes || bytes <= 0) {
+            return '0 B';
+        }
+
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const exp = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+        const value = bytes / (1024 ** exp);
+        return `${value.toFixed(exp === 0 ? 0 : 1)} ${units[exp]}`;
+    }
+
+    function formatUploadDate(value) {
+        if (!value) {
+            return '';
+        }
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return '';
+        }
+
+        return date.toLocaleString();
+    }
+
+    function getFilteredUploads() {
+        if (uploadsFilter === 'image') {
+            return uploadsCache.filter((file) => file.isImage);
+        }
+
+        if (uploadsFilter === 'file') {
+            return uploadsCache.filter((file) => !file.isImage);
+        }
+
+        return uploadsCache;
+    }
+
+    function updateUploadsTabState() {
+        elements.uploadsTabs.forEach((button) => {
+            const isActive = button.dataset.filter === uploadsFilter;
+            button.classList.toggle('active', isActive);
+            button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+    }
+
+    function createUploadActionButton(label, className, onClick) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `upload-action-button ${className || ''}`.trim();
+        button.textContent = label;
+        button.addEventListener('click', onClick);
+        return button;
+    }
+
+    function renderUploadsList() {
+        if (!elements.uploadsList) {
+            return;
+        }
+
+        const validFilenames = new Set(uploadsCache.map((file) => file.filename));
+        Array.from(selectedUploadFilenames).forEach((filename) => {
+            if (!validFilenames.has(filename)) {
+                selectedUploadFilenames.delete(filename);
+            }
+        });
+
+        updateUploadsTabState();
+        elements.uploadsList.innerHTML = '';
+
+        const files = getFilteredUploads();
+        if (files.length === 0) {
+            const emptyState = document.createElement('li');
+            emptyState.className = 'uploads-empty';
+            emptyState.textContent = 'No uploads in this filter.';
+            elements.uploadsList.appendChild(emptyState);
+            updateUploadsSelectionControls();
+            return;
+        }
+
+        files.forEach((file) => {
+            const item = document.createElement('li');
+            item.className = 'upload-item';
+            const isSelected = selectedUploadFilenames.has(file.filename);
+            item.classList.toggle('selected', isSelected);
+            item.draggable = true;
+            item.setAttribute('role', 'button');
+            item.setAttribute('aria-label', `Drag ${file.originalName || file.filename || 'file'} into editor`);
+
+            item.addEventListener('dragstart', (event) => {
+                if (!event.dataTransfer) {
+                    return;
+                }
+
+                event.dataTransfer.effectAllowed = 'copy';
+                event.dataTransfer.setData('application/x-dumbpad-upload', JSON.stringify(file));
+                event.dataTransfer.setData('text/uri-list', file.url || '');
+                event.dataTransfer.setData('text/plain', file.originalName || file.filename || file.url || '');
+            });
+
+            const titleRow = document.createElement('div');
+            titleRow.className = 'upload-title-row';
+
+            const selectCheckbox = document.createElement('input');
+            selectCheckbox.type = 'checkbox';
+            selectCheckbox.className = 'upload-select-checkbox';
+            selectCheckbox.checked = isSelected;
+            selectCheckbox.setAttribute('aria-label', `Select ${file.originalName || file.filename || 'file'}`);
+            selectCheckbox.addEventListener('click', (event) => {
+                event.stopPropagation();
+            });
+            selectCheckbox.addEventListener('change', (event) => {
+                event.stopPropagation();
+                toggleUploadSelection(file.filename, event.target.checked);
+                item.classList.toggle('selected', event.target.checked);
+            });
+
+            const name = document.createElement('div');
+            name.className = 'upload-name';
+            name.textContent = file.originalName || file.filename || 'file';
+
+            titleRow.appendChild(selectCheckbox);
+            titleRow.appendChild(name);
+
+            const meta = document.createElement('div');
+            meta.className = 'upload-meta';
+            const dateLabel = formatUploadDate(file.modifiedAt);
+            meta.textContent = `${formatBytes(file.size)}${dateLabel ? ` - ${dateLabel}` : ''}`;
+
+            const actions = document.createElement('div');
+            actions.className = 'upload-actions';
+
+            const previewButton = createUploadActionButton('Preview', '', () => {
+                openUploadPreview(file);
+            });
+
+            const downloadButton = createUploadActionButton('Download', '', () => {
+                const link = document.createElement('a');
+                link.href = file.url;
+                link.download = file.originalName || file.filename || 'download';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+
+            const deleteButton = createUploadActionButton('Delete', 'delete', async () => {
+                const shouldDelete = window.confirm(`Delete '${file.originalName || file.filename || 'file'}'?`);
+                if (!shouldDelete) {
+                    return;
+                }
+
+                try {
+                    await deleteUpload(file.filename);
+                    toaster.show('Upload deleted', 'success');
+                } catch (error) {
+                    toaster.show(error.message || 'Failed to delete upload', 'error', false, 3000);
+                }
+            });
+
+            actions.appendChild(previewButton);
+            actions.appendChild(downloadButton);
+            actions.appendChild(deleteButton);
+
+            item.appendChild(titleRow);
+            item.appendChild(meta);
+            item.appendChild(actions);
+            elements.uploadsList.appendChild(item);
+        });
+
+        updateUploadsSelectionControls();
+    }
+
+    async function loadUploads() {
+        const response = await fetchWithPin('/api/uploads/list');
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(payload.error || 'Failed to load uploads');
+        }
+
+        uploadsCache = Array.isArray(payload.files) ? payload.files : [];
+
+        if (payload.uploadConfig) {
+            uploadConfig = {
+                maxUploadSizeMB: payload.uploadConfig.maxUploadSizeMB || uploadConfig.maxUploadSizeMB,
+                maxUploadFiles: payload.uploadConfig.maxUploadFiles || uploadConfig.maxUploadFiles,
+                acceptedExtensions: Array.isArray(payload.uploadConfig.acceptedExtensions)
+                    ? payload.uploadConfig.acceptedExtensions
+                    : uploadConfig.acceptedExtensions,
+                blockedExtensions: Array.isArray(payload.uploadConfig.blockedExtensions)
+                    ? payload.uploadConfig.blockedExtensions
+                    : uploadConfig.blockedExtensions,
+            };
+            updateUploadHelpText();
+            updateUploadInputAccept();
+        }
+
+        renderUploadsList();
+    }
+
+    async function deleteUpload(filename, options = {}) {
+        const { skipRender = false } = options;
+
+        if (!filename) {
+            throw new Error('Invalid upload file');
+        }
+
+        const response = await fetchWithPin(`/api/uploads/${encodeURIComponent(filename)}`, {
+            method: 'DELETE',
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(payload.error || 'Delete failed');
+        }
+
+        uploadsCache = uploadsCache.filter((file) => file.filename !== filename);
+        selectedUploadFilenames.delete(filename);
+        if (!skipRender) {
+            renderUploadsList();
+        }
+    }
+
+    function clearSelectedImage() {
+        if (imageResizeState.target) {
+            imageResizeState.target.classList.remove('is-resizable-selected');
+        }
+
+        imageResizeState.target = null;
+        if (imageResizeState.handle) {
+            imageResizeState.handle.classList.remove('visible');
+        }
+        if (imageResizeState.leftHandle) {
+            imageResizeState.leftHandle.classList.remove('visible');
+        }
+        if (imageResizeState.rightHandle) {
+            imageResizeState.rightHandle.classList.remove('visible');
+        }
+        if (imageResizeState.toolbar) {
+            imageResizeState.toolbar.classList.remove('visible');
+        }
+    }
+
+    function updateResizeSizeLabel() {
+        if (!imageResizeState.target || !imageResizeState.sizeLabel) {
+            return;
+        }
+
+        const width = Math.round(imageResizeState.target.getBoundingClientRect().width);
+        imageResizeState.sizeLabel.textContent = `${width}px`;
+    }
+
+    function applyImageWidth(widthPx) {
+        if (!imageResizeState.target) {
+            return;
+        }
+
+        const maxWidth = Math.max(80, quill.root.clientWidth - 16);
+        const nextWidth = Math.max(80, Math.min(maxWidth, Math.round(widthPx)));
+        imageResizeState.target.style.width = `${nextWidth}px`;
+        imageResizeState.target.style.maxWidth = 'none';
+        imageResizeState.target.style.height = 'auto';
+        positionResizeHandle();
+        updateResizeSizeLabel();
+    }
+
+    function applyImageRatio(ratio) {
+        const maxWidth = Math.max(80, quill.root.clientWidth - 16);
+        applyImageWidth(maxWidth * ratio);
+        scheduleSave();
+    }
+
+    function resetImageSize() {
+        if (!imageResizeState.target) {
+            return;
+        }
+
+        imageResizeState.target.style.removeProperty('width');
+        imageResizeState.target.style.removeProperty('max-width');
+        imageResizeState.target.style.removeProperty('height');
+        positionResizeHandle();
+        updateResizeSizeLabel();
+        scheduleSave();
+    }
+
+    function positionResizeHandle() {
+        if (!imageResizeState.target || !imageResizeState.handle || !quill.root.contains(imageResizeState.target)) {
+            clearSelectedImage();
+            return;
+        }
+
+        const imageRect = imageResizeState.target.getBoundingClientRect();
+        const containerRect = quill.container.getBoundingClientRect();
+
+        imageResizeState.handle.style.left = `${imageRect.right - containerRect.left - 9}px`;
+        imageResizeState.handle.style.top = `${imageRect.bottom - containerRect.top - 9}px`;
+        imageResizeState.handle.classList.add('visible');
+
+        const midY = imageRect.top - containerRect.top + (imageRect.height / 2) - 16;
+
+        if (imageResizeState.leftHandle) {
+            imageResizeState.leftHandle.style.left = `${imageRect.left - containerRect.left - 6}px`;
+            imageResizeState.leftHandle.style.top = `${midY}px`;
+            imageResizeState.leftHandle.classList.add('visible');
+        }
+
+        if (imageResizeState.rightHandle) {
+            imageResizeState.rightHandle.style.left = `${imageRect.right - containerRect.left - 6}px`;
+            imageResizeState.rightHandle.style.top = `${midY}px`;
+            imageResizeState.rightHandle.classList.add('visible');
+        }
+
+        if (imageResizeState.toolbar) {
+            const editorPadding = 8;
+            const toolbarWidth = imageResizeState.toolbar.offsetWidth || 220;
+            const leftRaw = imageRect.left - containerRect.left;
+            const maxLeft = Math.max(editorPadding, quill.container.clientWidth - toolbarWidth - editorPadding);
+            const toolbarLeft = Math.max(editorPadding, Math.min(maxLeft, leftRaw));
+
+            let toolbarTop = imageRect.top - containerRect.top - 42;
+            if (toolbarTop < editorPadding) {
+                toolbarTop = imageRect.bottom - containerRect.top + 10;
+            }
+
+            imageResizeState.toolbar.style.left = `${toolbarLeft}px`;
+            imageResizeState.toolbar.style.top = `${toolbarTop}px`;
+            imageResizeState.toolbar.classList.add('visible');
+            updateResizeSizeLabel();
+        }
+    }
+
+    function selectResizableImage(imageElement) {
+        if (!imageElement || imageElement.tagName !== 'IMG') {
+            clearSelectedImage();
+            return;
+        }
+
+        if (imageResizeState.target && imageResizeState.target !== imageElement) {
+            imageResizeState.target.classList.remove('is-resizable-selected');
+        }
+
+        imageResizeState.target = imageElement;
+        imageElement.classList.add('is-resizable-selected');
+        positionResizeHandle();
+    }
+
+    function onImageResizeMove(event) {
+        if (!imageResizeState.isResizing || !imageResizeState.target) {
+            return;
+        }
+
+        const deltaX = event.clientX - imageResizeState.startX;
+        const direction = imageResizeState.activeHandleMode === 'left' ? -1 : 1;
+        applyImageWidth(imageResizeState.startWidth + (deltaX * direction));
+    }
+
+    function onImageResizeStop() {
+        if (!imageResizeState.isResizing) {
+            return;
+        }
+
+        imageResizeState.isResizing = false;
+        document.removeEventListener('mousemove', onImageResizeMove);
+        document.removeEventListener('mouseup', onImageResizeStop);
+        scheduleSave();
+    }
+
+    function beginImageResize(event, mode = 'corner') {
+        if (!imageResizeState.target) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        imageResizeState.isResizing = true;
+        imageResizeState.activeHandleMode = mode;
+        imageResizeState.startX = event.clientX;
+        imageResizeState.startWidth = imageResizeState.target.getBoundingClientRect().width;
+
+        document.addEventListener('mousemove', onImageResizeMove);
+        document.addEventListener('mouseup', onImageResizeStop);
+    }
+
+    function setupImageResizeInteractions() {
+        const handle = document.createElement('div');
+        handle.className = 'ql-image-resize-handle';
+        handle.setAttribute('role', 'presentation');
+        quill.container.appendChild(handle);
+
+        const leftHandle = document.createElement('div');
+        leftHandle.className = 'ql-image-resize-edge-handle left';
+        leftHandle.setAttribute('role', 'presentation');
+        quill.container.appendChild(leftHandle);
+
+        const rightHandle = document.createElement('div');
+        rightHandle.className = 'ql-image-resize-edge-handle right';
+        rightHandle.setAttribute('role', 'presentation');
+        quill.container.appendChild(rightHandle);
+
+        const toolbar = document.createElement('div');
+        toolbar.className = 'ql-image-resize-toolbar';
+
+        const label = document.createElement('span');
+        label.className = 'ql-image-size-label';
+        label.textContent = '0px';
+        toolbar.appendChild(label);
+
+        const presets = [
+            { label: 'S', ratio: 0.35 },
+            { label: 'M', ratio: 0.5 },
+            { label: 'L', ratio: 0.75 },
+            { label: 'Full', ratio: 1 },
+        ];
+
+        presets.forEach((preset) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'ql-image-size-button';
+            button.textContent = preset.label;
+            button.addEventListener('click', () => applyImageRatio(preset.ratio));
+            toolbar.appendChild(button);
+        });
+
+        const resetButton = document.createElement('button');
+        resetButton.type = 'button';
+        resetButton.className = 'ql-image-size-button reset';
+        resetButton.textContent = 'Auto';
+        resetButton.addEventListener('click', resetImageSize);
+        toolbar.appendChild(resetButton);
+
+        const dragHint = document.createElement('span');
+        dragHint.className = 'ql-image-size-hint';
+        dragHint.textContent = 'Drag edge/corner';
+        toolbar.appendChild(dragHint);
+
+        quill.container.appendChild(toolbar);
+
+        imageResizeState.handle = handle;
+        imageResizeState.leftHandle = leftHandle;
+        imageResizeState.rightHandle = rightHandle;
+        imageResizeState.toolbar = toolbar;
+        imageResizeState.sizeLabel = label;
+        imageResizeState.handle.addEventListener('mousedown', (event) => beginImageResize(event, 'corner'));
+        imageResizeState.leftHandle.addEventListener('mousedown', (event) => beginImageResize(event, 'left'));
+        imageResizeState.rightHandle.addEventListener('mousedown', (event) => beginImageResize(event, 'right'));
+
+        quill.root.addEventListener('click', (event) => {
+            const image = event.target.closest('img');
+            if (image) {
+                selectResizableImage(image);
+            } else if (!imageResizeState.isResizing) {
+                clearSelectedImage();
+            }
+        });
+
+        quill.root.addEventListener('scroll', positionResizeHandle, true);
+        window.addEventListener('resize', positionResizeHandle);
+
+        document.addEventListener('click', (event) => {
+            if (
+                quill.root.contains(event.target)
+                || imageResizeState.toolbar?.contains(event.target)
+                || imageResizeState.handle?.contains(event.target)
+                || imageResizeState.leftHandle?.contains(event.target)
+                || imageResizeState.rightHandle?.contains(event.target)
+            ) {
+                return;
+            }
+
+            if (!imageResizeState.isResizing) {
+                clearSelectedImage();
+            }
+        });
+
+        quill.on('selection-change', () => {
+            if (!imageResizeState.target || imageResizeState.isResizing) {
+                return;
+            }
+            positionResizeHandle();
+        });
+    }
+
+    function isFileDragEvent(event) {
+        const types = Array.from(event.dataTransfer?.types || []);
+        return types.includes('Files');
+    }
+
+    function isUploadItemDragEvent(event) {
+        const types = Array.from(event.dataTransfer?.types || []);
+        return types.includes('application/x-dumbpad-upload');
+    }
+
+    function isSupportedDropEvent(event) {
+        return isFileDragEvent(event) || isUploadItemDragEvent(event);
+    }
+
+    function getDraggedUploadFromEvent(event) {
+        try {
+            const raw = event.dataTransfer?.getData('application/x-dumbpad-upload') || '';
+            if (!raw) {
+                return null;
+            }
+
+            const parsed = JSON.parse(raw);
+            if (!parsed || !parsed.url) {
+                return null;
+            }
+
+            return parsed;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function showDropOverlay() {
+        if (!fileDropState.overlay) {
+            return;
+        }
+
+        fileDropState.overlay.classList.add('visible');
+    }
+
+    function hideDropOverlay() {
+        if (!fileDropState.overlay) {
+            return;
+        }
+
+        fileDropState.overlay.classList.remove('visible');
+    }
+
+    function setupFileDropInteractions() {
+        const overlay = document.createElement('div');
+        overlay.className = 'editor-drop-overlay';
+        overlay.textContent = 'Drop files to upload';
+        quill.container.appendChild(overlay);
+
+        fileDropState.overlay = overlay;
+
+        quill.container.addEventListener('dragenter', (event) => {
+            if (!isSupportedDropEvent(event)) {
+                return;
+            }
+
+            event.preventDefault();
+            fileDropState.dragDepth += 1;
+            showDropOverlay();
+        });
+
+        quill.container.addEventListener('dragover', (event) => {
+            if (!isSupportedDropEvent(event)) {
+                return;
+            }
+
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+            showDropOverlay();
+        });
+
+        quill.container.addEventListener('dragleave', (event) => {
+            if (!isSupportedDropEvent(event)) {
+                return;
+            }
+
+            event.preventDefault();
+            fileDropState.dragDepth = Math.max(0, fileDropState.dragDepth - 1);
+            if (fileDropState.dragDepth === 0) {
+                hideDropOverlay();
+            }
+        });
+
+        quill.container.addEventListener('drop', async (event) => {
+            if (!isSupportedDropEvent(event)) {
+                return;
+            }
+
+            event.preventDefault();
+            fileDropState.dragDepth = 0;
+            hideDropOverlay();
+
+            quill.focus();
+
+            const files = Array.from(event.dataTransfer?.files || []);
+            if (files.length > 0) {
+                await uploadAndInsertFiles(files, 'drop');
+                return;
+            }
+
+            const draggedUpload = getDraggedUploadFromEvent(event);
+            if (!draggedUpload) {
+                return;
+            }
+
+            insertUploadedFiles([draggedUpload]);
+            scheduleSave();
+            toaster.show('Inserted 1 uploaded item', 'success', false, 1800);
+        });
+
+        document.addEventListener('dragend', () => {
+            fileDropState.dragDepth = 0;
+            hideDropOverlay();
+        });
+
+        document.addEventListener('drop', () => {
+            fileDropState.dragDepth = 0;
+            hideDropOverlay();
+        });
     }
 
     function getEditorHtml() {
@@ -180,6 +1003,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const markdown = markdownText || '';
         const html = markdown ? marked.parse(markdown) : '';
 
+        clearSelectedImage();
         isSyncingEditor = true;
         quill.setContents([], 'silent');
         if (html.trim()) {
@@ -226,8 +1050,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             uploadConfig = {
                 maxUploadSizeMB: payload.uploadConfig.maxUploadSizeMB || uploadConfig.maxUploadSizeMB,
                 maxUploadFiles: payload.uploadConfig.maxUploadFiles || uploadConfig.maxUploadFiles,
+                acceptedExtensions: Array.isArray(payload.uploadConfig.acceptedExtensions)
+                    ? payload.uploadConfig.acceptedExtensions
+                    : uploadConfig.acceptedExtensions,
+                blockedExtensions: Array.isArray(payload.uploadConfig.blockedExtensions)
+                    ? payload.uploadConfig.blockedExtensions
+                    : uploadConfig.blockedExtensions,
             };
             updateUploadHelpText();
+            updateUploadInputAccept();
         }
 
         return Array.isArray(payload.files) ? payload.files : [];
@@ -265,9 +1096,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const uploadedFiles = await uploadFiles(fileList);
             insertUploadedFiles(uploadedFiles);
+            await loadUploads();
             scheduleSave();
 
-            const label = source === 'paste' ? 'Pasted' : 'Attached';
+            const label = source === 'paste'
+                ? 'Pasted'
+                : source === 'drop'
+                    ? 'Dropped'
+                    : 'Attached';
             toaster.show(`${label} ${uploadedFiles.length} file(s)`, 'success');
         } catch (error) {
             console.error('Upload failed:', error);
@@ -318,6 +1154,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             uploadConfig = {
                 maxUploadSizeMB: config.uploadConfig.maxUploadSizeMB || uploadConfig.maxUploadSizeMB,
                 maxUploadFiles: config.uploadConfig.maxUploadFiles || uploadConfig.maxUploadFiles,
+                acceptedExtensions: Array.isArray(config.uploadConfig.acceptedExtensions)
+                    ? config.uploadConfig.acceptedExtensions
+                    : uploadConfig.acceptedExtensions,
+                blockedExtensions: Array.isArray(config.uploadConfig.blockedExtensions)
+                    ? config.uploadConfig.blockedExtensions
+                    : uploadConfig.blockedExtensions,
             };
         }
 
@@ -325,6 +1167,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.headerTitle.textContent = config.siteTitle;
         elements.headerTitle.setAttribute('data-tooltip', `Version: ${config.version}`);
         updateUploadHelpText();
+        updateUploadInputAccept();
+        renderUploadsList();
     }
 
     async function loadNotepads() {
@@ -526,6 +1370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function closeAllModals() {
+        closeUploadPreview();
         document.querySelectorAll('.modal').forEach((modal) => hideModal(modal));
         searchManager.closeModal();
     }
@@ -588,6 +1433,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.attachFilesInput.addEventListener('change', async (event) => {
             await uploadAndInsertFiles(event.target.files, 'attach');
             event.target.value = '';
+        });
+
+        elements.uploadsTabs.forEach((button) => {
+            button.addEventListener('click', () => {
+                uploadsFilter = button.dataset.filter || 'all';
+                renderUploadsList();
+            });
+        });
+
+        elements.uploadsSelectAllBtn.addEventListener('click', selectAllVisibleUploads);
+        elements.uploadsClearSelectionBtn.addEventListener('click', clearUploadSelection);
+        elements.uploadsDeleteSelectedBtn.addEventListener('click', deleteSelectedUploads);
+
+        elements.uploadPreviewCloseBtn.addEventListener('click', closeUploadPreview);
+        elements.uploadPreviewDownloadBtn.addEventListener('click', () => {
+            if (!previewedUpload?.url) {
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = previewedUpload.url;
+            link.download = previewedUpload.originalName || previewedUpload.filename || 'download';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         });
 
         elements.notepadSelector.addEventListener('change', async (event) => {
@@ -763,6 +1633,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             applySettingsToInputs();
             addEventListeners();
             await loadConfig();
+            try {
+                await loadUploads();
+            } catch (error) {
+                console.error('Failed to load uploads:', error);
+                toaster.show('Unable to load uploads list', 'error', false, 2500);
+            }
             await loadNotepads();
 
             if (currentNotepads.some((pad) => pad.id === currentNotepadId)) {
