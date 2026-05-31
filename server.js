@@ -2,11 +2,13 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs').promises;
+const fsNative = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
 const WebSocket = require('ws');
 const Fuse = require('fuse.js');
+const multer = require('multer');
 const { generatePWAManifest } = require("./scripts/pwa-manifest-generator")
 const { originValidationMiddleware, getCorsOptions, validateOrigin } = require('./scripts/cors');
 const { getHighlightLanguages } = require('./constants');
@@ -30,6 +32,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const PUBLIC_DIR = path.join(__dirname, "public");
 const ASSETS_DIR = path.join(PUBLIC_DIR, "Assets");
 const NOTEPADS_FILE = path.join(DATA_DIR, 'notepads.json');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const SITE_TITLE = process.env.SITE_TITLE || 'DumbPad';
 const PIN = process.env.DUMBPAD_PIN;
 const COOKIE_NAME = 'dumbpad_auth';
@@ -40,6 +43,17 @@ const PAGE_HISTORY_COOKIE = 'dumbpad_page_history';
 const PAGE_HISTORY_COOKIE_AGE = process.env.PAGE_HISTORY_COOKIE_AGE || 365; // defaults to 1 Year in days
 const pageHistoryCookieAge = PAGE_HISTORY_COOKIE_AGE * 24 * 60 * 60 * 1000;
 const MAX_FILENAME_COLLISION_ATTEMPTS = 100; // Maximum attempts to resolve filename collisions
+const DEFAULT_MAX_UPLOAD_SIZE_MB = 10;
+const DEFAULT_MAX_UPLOAD_FILES = 6;
+
+function parsePositiveInt(value, fallbackValue) {
+    const parsed = parseInt(value, 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallbackValue;
+}
+
+const MAX_UPLOAD_SIZE_MB = parsePositiveInt(process.env.MAX_UPLOAD_SIZE_MB, DEFAULT_MAX_UPLOAD_SIZE_MB);
+const MAX_UPLOAD_FILES = parsePositiveInt(process.env.MAX_UPLOAD_FILES, DEFAULT_MAX_UPLOAD_FILES);
+const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
 
 let notepads_cache = {
     notepads: [],
@@ -604,6 +618,10 @@ app.get('/api/config', (req, res) => {
         baseUrl: process.env.BASE_URL,
         version: VERSION,
         highlightLanguages: HIGHLIGHT_LANGUAGES,
+        uploadConfig: {
+            maxUploadSizeMB: MAX_UPLOAD_SIZE_MB,
+            maxUploadFiles: MAX_UPLOAD_FILES,
+        },
     });
 });
 
@@ -628,11 +646,42 @@ app.use('/api', (req, res, next) => {
     requirePin(req, res, next);
 });
 
+// Upload middleware for local file attachments
+const uploadStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        fsNative.mkdir(UPLOADS_DIR, { recursive: true }, (err) => cb(err, UPLOADS_DIR));
+    },
+    filename: (req, file, cb) => {
+        const originalName = typeof file.originalname === 'string' ? file.originalname : 'file';
+        const extension = path.extname(originalName).toLowerCase();
+        const baseName = path.basename(originalName, extension);
+        const sanitizedBaseName = sanitizeFilename(baseName || 'file')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+            .slice(0, 64) || 'file';
+        const uniquePrefix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+
+        cb(null, `${uniquePrefix}-${sanitizedBaseName}${extension}`);
+    }
+});
+
+const upload = multer({
+    storage: uploadStorage,
+    limits: {
+        fileSize: MAX_UPLOAD_SIZE_BYTES,
+        files: MAX_UPLOAD_FILES,
+    },
+});
+
+// Attachments are served from local storage under the authenticated /api namespace
+app.use('/api/uploads', express.static(UPLOADS_DIR));
+
 // Ensure data directory exists
 async function ensureDataDir() {
     try {
         // Create data directory if it doesn't exist
         await fs.mkdir(DATA_DIR, { recursive: true });
+        await fs.mkdir(UPLOADS_DIR, { recursive: true });
         
         // Create notepads.json if it doesn't exist
         try {
@@ -821,9 +870,16 @@ function searchNotepads(query) {
     return results;
 }
 
+function escapeMarkdownText(value) {
+    return String(value || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/\[/g, '\\[')
+        .replace(/\]/g, '\\]');
+}
+
 // Watch for changes in notepads.json or .txt files
 fs.watch(DATA_DIR, (eventType, filename) => {
-    if (filename.endsWith(".txt")) indexNotepads();
+    if (typeof filename === 'string' && filename.endsWith('.txt')) indexNotepads();
 });
 fs.watch(NOTEPADS_FILE, () => indexNotepads());
 
@@ -838,6 +894,68 @@ fs.watch(NOTEPADS_FILE, () => indexNotepads());
 })();
 
 /* API Endpoints */
+// Upload file attachments and return markdown-ready references
+app.post('/api/uploads', (req, res, next) => {
+    upload.array('files', MAX_UPLOAD_FILES)(req, res, (err) => {
+        if (!err) {
+            return next();
+        }
+
+        if (err instanceof multer.MulterError) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(413).json({
+                    error: `File exceeds ${MAX_UPLOAD_SIZE_MB}MB upload limit`,
+                });
+            }
+
+            if (err.code === 'LIMIT_FILE_COUNT') {
+                return res.status(400).json({
+                    error: `Maximum ${MAX_UPLOAD_FILES} files per upload`,
+                });
+            }
+
+            return res.status(400).json({ error: err.message });
+        }
+
+        console.error('Upload error:', err);
+        return res.status(500).json({ error: 'Error uploading file(s)' });
+    });
+}, async (req, res) => {
+    const files = Array.isArray(req.files) ? req.files : [];
+
+    if (files.length === 0) {
+        return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    const uploaded = files.map((file) => {
+        const safeOriginalName = escapeMarkdownText(file.originalname || file.filename);
+        const encodedFilename = encodeURIComponent(file.filename);
+        const url = `/api/uploads/${encodedFilename}`;
+        const isImage = typeof file.mimetype === 'string' && file.mimetype.startsWith('image/');
+        const markdown = isImage
+            ? `![${safeOriginalName}](${url})`
+            : `[${safeOriginalName}](${url})`;
+
+        return {
+            filename: file.filename,
+            originalName: file.originalname || file.filename,
+            mimeType: file.mimetype,
+            size: file.size,
+            url,
+            isImage,
+            markdown,
+        };
+    });
+
+    return res.json({
+        files: uploaded,
+        uploadConfig: {
+            maxUploadSizeMB: MAX_UPLOAD_SIZE_MB,
+            maxUploadFiles: MAX_UPLOAD_FILES,
+        },
+    });
+});
+
 // Get list of notepads
 app.get('/api/notepads', async (req, res) => {
     try {

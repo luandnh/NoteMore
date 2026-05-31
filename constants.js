@@ -1,7 +1,7 @@
 // All available highlight.js language identifiers
 // This list includes all supported languages for syntax highlighting
 // Note: Frontend now uses lazy-loading based on content detection instead of loading all languages
-export const ALL_HIGHLIGHT_LANGUAGES = `1c,abnf,accesslog,actionscript,ada,angelscript,apache,applescript,arcade,arduino,
+const ALL_HIGHLIGHT_LANGUAGES = `1c,abnf,accesslog,actionscript,ada,angelscript,apache,applescript,arcade,arduino,
 armasm,asciidoc,aspectj,autohotkey,autoit,avrasm,awk,axapta,bash,basic,bnf,brainfuck,c,cal,capnproto,ceylon,clean,
 clojure-repl,clojure,cmake,coffeescript,coq,cos,cpp,crmsh,crystal,csharp,csp,css,d,dart,delphi,diff,django,dns,dockerfile,
 dos,dsconfig,dts,dust,ebnf,elixir,elm,erb,erlang-repl,erlang,excel,fix,flix,fortran,fsharp,gams,gauss,gcode,gherkin,glsl,gml,
@@ -15,6 +15,11 @@ vala,vbnet,vbscript-html,vbscript,verilog,vhdl,vim,wasm,wren,x86asm,xl,xml,xquer
 
 // Helper function to get language array from the constant
 // Used by server for configuration, client now uses lazy-loading
-export const getHighlightLanguages = () => {
+const getHighlightLanguages = () => {
     return ALL_HIGHLIGHT_LANGUAGES.split(',').map(lang => lang.trim()).filter(lang => lang);
+};
+
+module.exports = {
+    ALL_HIGHLIGHT_LANGUAGES,
+    getHighlightLanguages,
 };

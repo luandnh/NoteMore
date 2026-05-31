@@ -51,6 +51,8 @@ A stupid simple, no auth (unless you want it!), modern notepad application with 
 - Browser navigation support (back/forward buttons)
 - Fuzzy Search (by filename and file contents)
 - PWA Support with automatic cache updates
+- Attach/upload files and images directly into notes
+- Paste image/files from clipboard to auto-upload and insert markdown links
 
 ## Quick Start
 
@@ -102,6 +104,8 @@ services:
       # MAX_ATTEMPTS: ${DUMBPAD_MAX_ATTEMPTS:-5} # Customize pin max attempts (if empty, defaults to 5)
       # COOKIE_MAX_AGE: ${DUMBPAD_COOKIE_MAX_AGE:-24} # Customize maximum age of cookies primarily used for pin verification (default 24) in hours
       # PAGE_HISTORY_COOKIE_AGE: ${DUMBPAD_PAGE_HISTORY_COOKIE_AGE:-365} # Customize age of cookie to show the last notepad opened (default 365 | max 400) in days - shows default notepad on load if expired
+      # MAX_UPLOAD_SIZE_MB: ${DUMBPAD_MAX_UPLOAD_SIZE_MB:-10} # Max size per uploaded file in MB
+      # MAX_UPLOAD_FILES: ${DUMBPAD_MAX_UPLOAD_FILES:-6} # Max number of files per upload request
       
       # MARKDOWN CODE SYNTAX HIGHLIGHTING (only use below if you want to restrict to specific languages):
       # By default, DumbPad includes support for all ~180 languages supported by highlight.js.
@@ -294,6 +298,8 @@ Running containers as non-root users is a security best practice that:
 | TRUST_PROXY             | Enable proxy trust for X-Forwarded-For headers               | false                 | No       |
 | TRUSTED_PROXY_IPS       | Comma-separated list of trusted proxy IPs                    | None                  | No       |
 | HIGHLIGHT_LANGUAGES     | Comma-separated list of code syntax languages to restrict to | all if not supplied   | No       |
+| MAX_UPLOAD_SIZE_MB      | Maximum upload size per file in MB                           | 10                    | No       |
+| MAX_UPLOAD_FILES        | Maximum files accepted per upload request                    | 6                     | No       |
 
 ### Proxy Trust Configuration
 
@@ -435,11 +441,13 @@ Access settings via the gear icon (⚙️) in the header or use keyboard shortcu
 - @highlightjs/cdn-assets: Highlight.js assets for code syntax highlighting
 - fuse.js: Fuzzy searching
 - ws: WebSocket support for real-time collaboration
+- multer: Multipart upload handling for file/image attachments
 
 The `data` directory contains:
 
 - `notepads.json`: List of all notepads
 - Individual `.txt` files for each notepad's content
+- `uploads/`: Local attachment storage for uploaded image/files
 - Drop in .txt files to import notes (requires page refresh)
 
 ⚠️ Important: Never delete the `data` directory when updating! This is where all your notes are stored.
@@ -454,6 +462,8 @@ The `data` directory contains:
 - **Search**: `Ctrl+K` (or `Cmd+K`) to open fuzzy search across all notepads
 - **Copy link**: Click the link button (🔗) to copy the current notepad's shareable URL
 - **Settings**: Click the gear icon (⚙️) or use `Ctrl+Alt+,` (or `Cmd+Ctrl+,`)
+- **Attach files**: Click **Attach files** in the right panel to upload files/images and insert markdown links
+- **Paste image/files**: Paste directly into the editor to auto-upload and insert links
 
 ### Notepad Management
 

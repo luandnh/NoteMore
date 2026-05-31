@@ -48,6 +48,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const settingsReset = document.getElementById('settings-reset');
     const settingsInputAutoSaveStatusInterval = document.getElementById('autosave-status-interval-input');
     const settingsEnableRemoteConnectionMessages = document.getElementById('settings-remote-connection-messages');
+    const attachFilesButton = document.getElementById('attach-files-button');
+    const attachFilesInput = document.getElementById('attach-files-input');
+    const quickCreateNoteButton = document.getElementById('quick-create-note');
+    const attachFilesHelp = document.getElementById('attach-files-help');
 
     let saveTimeout;
     let lastSaveTime = Date.now();
@@ -57,6 +61,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentNotepads = []; // Global array to hold current notepads list
     let isInitialLoad = true; // Track if this is the initial page load
     let isHandlingTabOperation = false; // Flag to prevent input event interference with tab operations
+    let uploadConfig = {
+        maxUploadSizeMB: 10,
+        maxUploadFiles: 6,
+    };
 
     // Initialize managers
     const operationsManager = new OperationsManager();
@@ -175,6 +183,88 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.body.removeChild(textArea);
         }
     };
+
+    function updateUploadHelpText() {
+        if (!attachFilesHelp) return;
+
+        attachFilesHelp.textContent = `Paste image/file into editor, or upload up to ${uploadConfig.maxUploadFiles} files (${uploadConfig.maxUploadSizeMB}MB each).`;
+    }
+
+    function insertUploadedMarkdown(markdownText) {
+        if (!markdownText) return;
+
+        const selectionStart = editor.selectionStart;
+        const selectionEnd = editor.selectionEnd;
+        const selectedText = editor.value.substring(selectionStart, selectionEnd);
+        const hasLeftNewline = selectionStart > 0 && editor.value[selectionStart - 1] !== '\n';
+        const hasRightNewline = selectionEnd < editor.value.length && editor.value[selectionEnd] !== '\n';
+        const replacementText = `${hasLeftNewline ? '\n' : ''}${markdownText}${hasRightNewline ? '\n' : ''}`;
+
+        isHandlingTabOperation = true;
+        editor.setSelectionRange(selectionStart, selectionEnd);
+        editor.setRangeText(replacementText, selectionStart, selectionEnd, 'end');
+
+        if (selectedText.length > 0) {
+            const deleteOperation = operationsManager.createOperation(
+                OperationType.DELETE,
+                selectionStart,
+                selectedText,
+                userId
+            );
+            collaborationManager.sendOperation(deleteOperation);
+        }
+
+        if (replacementText.length > 0) {
+            const insertOperation = operationsManager.createOperation(
+                OperationType.INSERT,
+                selectionStart,
+                replacementText,
+                userId
+            );
+            collaborationManager.sendOperation(insertOperation);
+        }
+
+        previousEditorValue = editor.value;
+        previewManager.updatePreviewIfActive(editor.value);
+        debouncedSave(editor.value);
+        collaborationManager.updateLocalCursor();
+        setTimeout(() => { isHandlingTabOperation = false; }, 50);
+    }
+
+    async function uploadAttachments(fileList, source = 'picker') {
+        const files = Array.from(fileList || []);
+        if (files.length === 0) return;
+
+        const filesToUpload = files.slice(0, uploadConfig.maxUploadFiles);
+        if (files.length > uploadConfig.maxUploadFiles) {
+            toaster.show(`Only the first ${uploadConfig.maxUploadFiles} files will be uploaded`, 'error');
+        }
+
+        const formData = new FormData();
+        filesToUpload.forEach(file => formData.append('files', file, file.name));
+
+        try {
+            const response = await fetchWithPin('/api/uploads', {
+                method: 'POST',
+                body: formData,
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(payload.error || 'Upload failed');
+            }
+
+            const markdownText = (payload.files || []).map(file => file.markdown).join('\n');
+            insertUploadedMarkdown(markdownText);
+
+            const actionLabel = source === 'paste' ? 'Pasted' : 'Attached';
+            toaster.show(`${actionLabel} ${filesToUpload.length} file(s)`, 'success');
+            editor.focus();
+        } catch (error) {
+            console.error('Error uploading attachments:', error);
+            toaster.show(error.message || 'Failed to upload file(s)', 'error', false, 3000);
+        }
+    }
 
     // Update URL with notepad name without reloading the page
     function updateUrlWithNotepad(notepadName) {
@@ -521,6 +611,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         editor.addEventListener('keyup', () => collaborationManager.updateLocalCursor());
         editor.addEventListener('click', () => collaborationManager.updateLocalCursor());
         editor.addEventListener('scroll', () => cursorManager.updateAllCursors());
+
+        // Upload clipboard files/images and insert markdown references in-place
+        editor.addEventListener('paste', async (e) => {
+            const clipboardItems = Array.from(e.clipboardData?.items || []);
+            const pastedFiles = clipboardItems
+                .filter(item => item.kind === 'file')
+                .map(item => item.getAsFile())
+                .filter(Boolean);
+
+            if (pastedFiles.length === 0) {
+                return;
+            }
+
+            e.preventDefault();
+            await uploadAttachments(pastedFiles, 'paste');
+        });
 
         // Handle tab/shift-tab indentation
         editor.addEventListener('keydown', (e) => {
@@ -1013,6 +1119,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function addNotepadControlsEventListeners() {
         copyLinkBtn.addEventListener('click', copyCurrentNotepadLink);
+
+        attachFilesButton.addEventListener('click', () => {
+            attachFilesInput.click();
+        });
+
+        attachFilesInput.addEventListener('change', async (e) => {
+            await uploadAttachments(e.target.files, 'picker');
+            e.target.value = '';
+        });
+
+        quickCreateNoteButton.addEventListener('click', createNotepad);
         
         notepadSelector.addEventListener('change', async (e) => {
             await selectNotepad(e.target.value);
@@ -1431,11 +1548,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         setupToolTips();
         addEventListeners();
         appSettings = settingsManager.loadSettings();
+        updateUploadHelpText();
 
         fetch(`/api/config`)
             .then(response => response.json())
             .then(config => { // Load config and initialize markdown functionality
                 if (config.error) throw new Error(config.error);
+
+                if (config.uploadConfig) {
+                    uploadConfig = {
+                        maxUploadSizeMB: config.uploadConfig.maxUploadSizeMB || uploadConfig.maxUploadSizeMB,
+                        maxUploadFiles: config.uploadConfig.maxUploadFiles || uploadConfig.maxUploadFiles,
+                    };
+                    updateUploadHelpText();
+                }
 
                 document.getElementById('page-title').textContent = config.siteTitle;
                 document.getElementById('header-title').textContent = config.siteTitle;

@@ -125,16 +125,31 @@
             </div>
         </header>
         <main>
-            <div id="editor-preview-wrapper" class="editor-preview-wrapper">
-                <div id="editor-container" class="editor-container">
-                    <textarea id="editor" placeholder="Start typing your notes here..." spellcheck="true" autofocus></textarea>
+            <div class="workspace-layout">
+                <div id="editor-preview-wrapper" class="editor-preview-wrapper">
+                    <div id="editor-container" class="editor-container">
+                        <textarea id="editor" placeholder="Start typing your notes here..." spellcheck="true" autofocus></textarea>
+                    </div>
+                    <div id="resize-handle" class="resize-handle" style="display: none;">
+                        <div class="resize-handle-line"></div>
+                    </div>
+                    <div id="preview-container" class="preview-container" style="display: none;">
+                        <div id="preview-pane"></div>
+                    </div>
                 </div>
-                <div id="resize-handle" class="resize-handle" style="display: none;">
-                    <div class="resize-handle-line"></div>
-                </div>
-                <div id="preview-container" class="preview-container" style="display: none;">
-                    <div id="preview-pane"></div>
-                </div>
+
+                <aside class="quick-actions-panel" aria-label="Quick actions">
+                    <button id="attach-files-button" class="quick-action-button quick-action-attach" type="button">
+                        <span class="quick-action-icon" aria-hidden="true">↑</span>
+                        <span>Attach files</span>
+                    </button>
+                    <button id="quick-create-note" class="quick-action-button quick-action-create" type="button">
+                        <span class="quick-action-icon" aria-hidden="true">+</span>
+                        <span>Create note</span>
+                    </button>
+                    <input id="attach-files-input" type="file" multiple hidden>
+                    <p id="attach-files-help" class="quick-actions-help"></p>
+                </aside>
             </div>
         </main>
         <div id="toast-container" class="toast-container"></div>

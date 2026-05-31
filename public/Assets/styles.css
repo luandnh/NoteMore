@@ -124,6 +124,64 @@ main {
     flex: 1;
 }
 
+.workspace-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 1rem;
+    align-items: start;
+}
+
+.quick-actions-panel {
+    height: calc(100vh - 9rem);
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    justify-content: flex-start;
+    position: sticky;
+    top: 1rem;
+}
+
+.quick-action-button {
+    border: 1px solid var(--secondary-color);
+    color: var(--text-color);
+    background: linear-gradient(180deg, var(--header-bg), var(--textarea-bg));
+    border-radius: 10px;
+    min-height: 2.75rem;
+    padding: 0.6rem 0.95rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem;
+    transition: var(--input-element-transition);
+}
+
+.quick-action-button:hover {
+    background: var(--button-hover);
+}
+
+.quick-action-icon {
+    font-size: 1rem;
+    line-height: 1;
+    width: 1rem;
+    text-align: center;
+}
+
+.quick-action-create {
+    border-color: var(--primary-color);
+    background: var(--textarea-bg);
+}
+
+.quick-actions-help {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: var(--text-color);
+    opacity: 0.82;
+}
+
 /* Custom Scrollbars */
 /* Webkit browsers */
 ::-webkit-scrollbar {
@@ -843,8 +901,34 @@ main {
         max-height: 83vh;
     }
 
+    .workspace-layout {
+        grid-template-columns: minmax(0, 1fr) 220px;
+    }
+
     .notepad-controls-wrapper {
         gap: 2rem;
+    }
+}
+
+@media (max-width: 1000px) {
+    .workspace-layout {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+
+    .quick-actions-panel {
+        height: auto;
+        position: static;
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .quick-action-button {
+        flex: 1;
+    }
+
+    .quick-actions-help {
+        display: none;
     }
 }
 
@@ -912,6 +996,19 @@ main {
     .editor-preview-wrapper {
         height: 71vh;
         flex-direction: column; /* Stack vertically on mobile */
+    }
+
+    .quick-actions-panel {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .quick-action-button {
+        min-height: 2.5rem;
+        font-size: 0.9rem;
+        padding: 0.55rem 0.5rem;
     }
     
     /* Mobile split view layout */
