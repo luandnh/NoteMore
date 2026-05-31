@@ -99,9 +99,9 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Run Trivy filesystem scan (fail on high/critical)
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          trivy-version: v0.63.0
+          version: v0.63.0
           scan-type: fs
           scan-ref: .
           vuln-type: os,library
@@ -139,9 +139,9 @@ jobs:
           tags: local/notemore:${{ github.sha }}
 
       - name: Run Trivy image scan (fail on high/critical)
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          trivy-version: v0.63.0
+          version: v0.63.0
           scan-type: image
           image-ref: local/notemore:${{ github.sha }}
           vuln-type: os,library
