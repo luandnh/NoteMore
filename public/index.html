@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title id="page-title">DumbPad - Simple Notes</title>
-    <link rel="icon" type="image/svg+xml" href="Assets/dumbpad.svg">
-    <link rel="alternate icon" type="image/png" href="Assets/dumbpad.png">
-    <link rel="apple-touch-icon" href="Assets/dumbpad.png">
+    <title id="page-title">NoteMore - Simple Notes</title>
+    <link rel="icon" type="image/svg+xml" href="Assets/notemore.svg">
+    <link rel="alternate icon" type="image/png" href="Assets/notemore.png">
+    <link rel="apple-touch-icon" href="Assets/notemore.png">
     <link rel="stylesheet" href="Assets/styles.css">
     <link rel="stylesheet" href="Assets/preview-styles.css">
     <link rel="stylesheet" href="/vendor/quill/quill.snow.css">
     <link rel="manifest" href="Assets/manifest.json">
     <script>
         (function() { // Initialize theme immediately - Prevents theme flicker
-            let theme = JSON.parse(localStorage.getItem('dumbpad_theme')) 
+            let theme = JSON.parse(localStorage.getItem('notemore_theme')) 
             if (!theme) {
                 theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-                localStorage.setItem('dumbpad_theme', JSON.stringify(theme));
+                localStorage.setItem('notemore_theme', JSON.stringify(theme));
             } 
             document.documentElement.setAttribute('data-theme', theme);
         })();
@@ -27,7 +27,7 @@
         <header>
             <div class="header-top">
                 <div id="header-title" data-tooltip="Loading version...">
-                    <h1 style="font-size: 1.5rem;">DumbPad</h1>
+                    <h1 style="font-size: 1.5rem;">NoteMore</h1>
                 </div>
                 <div class="header-right"> 
 

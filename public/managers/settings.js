@@ -1,7 +1,7 @@
 export default class SettingsManager {
   constructor(storageManager, applySettings) {
     this.storageManager = storageManager;
-    this.SETTINGS_KEY = 'dumbpad_settings';
+    this.SETTINGS_KEY = 'notemore_settings';
     this.applySettings = applySettings
     this.settingsInputAutoSaveStatusInterval = document.getElementById('autosave-status-interval-input');
     this.settingsEnableRemoteConnectionMessages = document.getElementById('settings-remote-connection-messages');

@@ -11,7 +11,7 @@ import { marked } from '/js/marked/marked.esm.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
     const DEBUG = false;
-    const THEME_KEY = 'dumbpad_theme';
+    const THEME_KEY = 'notemore_theme';
     let appSettings = {};
     const editorContainer = document.getElementById('editor-container');
     const editor = document.getElementById('editor');

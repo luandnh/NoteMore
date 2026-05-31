@@ -2,7 +2,7 @@
 
 ## All supported languages from the highlight.js library
 
-- By default, DumbPad includes support for all ~180 languages supported by highlight.js.
+- By default, NoteMore includes support for all ~180 languages supported by highlight.js.
 - If you want to limit it to a custom set of languages, you can specify them as a comma-separated list in the `HIGHLIGHT_LANGUAGES` environment variable.
 - https://github.com/highlightjs/highlight.js/blob/main/SUPPORTED_LANGUAGES.md
 

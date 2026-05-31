@@ -4,8 +4,8 @@ import StorageManager from './managers/storage.js';
 import { marked } from '/js/marked/marked.esm.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const THEME_KEY = 'dumbpad_theme';
-    const SETTINGS_KEY = 'dumbpad_wysiwyg_settings';
+    const THEME_KEY = 'notemore_theme';
+    const SETTINGS_KEY = 'notemore_wysiwyg_settings';
 
     const settingsDefaults = {
         saveStatusMessageInterval: 600,
@@ -476,7 +476,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
 
                 event.dataTransfer.effectAllowed = 'copy';
-                event.dataTransfer.setData('application/x-dumbpad-upload', JSON.stringify(file));
+                event.dataTransfer.setData('application/x-notemore-upload', JSON.stringify(file));
                 event.dataTransfer.setData('text/uri-list', file.url || '');
                 event.dataTransfer.setData('text/plain', file.originalName || file.filename || file.url || '');
             });
@@ -870,7 +870,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function isUploadItemDragEvent(event) {
         const types = Array.from(event.dataTransfer?.types || []);
-        return types.includes('application/x-dumbpad-upload');
+        return types.includes('application/x-notemore-upload');
     }
 
     function isSupportedDropEvent(event) {
@@ -879,7 +879,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function getDraggedUploadFromEvent(event) {
         try {
-            const raw = event.dataTransfer?.getData('application/x-dumbpad-upload') || '';
+            const raw = event.dataTransfer?.getData('application/x-notemore-upload') || '';
             if (!raw) {
                 return null;
             }

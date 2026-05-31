@@ -6,7 +6,7 @@ on:
       - main # Trigger the workflow on pushes to the main branch
 
 env:
-  DOCKER_IMAGE: dumbwareio/dumbpad
+  DOCKER_IMAGE: luandnh1998/notemore
   PLATFORMS: linux/amd64,linux/arm64
 
 jobs:

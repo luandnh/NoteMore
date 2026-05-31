@@ -33,13 +33,13 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const ASSETS_DIR = path.join(PUBLIC_DIR, "Assets");
 const NOTEPADS_FILE = path.join(DATA_DIR, 'notepads.json');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
-const SITE_TITLE = process.env.SITE_TITLE || 'DumbPad';
-const PIN = process.env.DUMBPAD_PIN;
-const COOKIE_NAME = 'dumbpad_auth';
+const SITE_TITLE = process.env.SITE_TITLE || 'NoteMore';
+const PIN = process.env.PIN_CODE;
+const COOKIE_NAME = 'notemore_auth';
 const COOKIE_MAX_AGE = process.env.COOKIE_MAX_AGE || 24; // default 24 in hours
 const cookieMaxAge = COOKIE_MAX_AGE * 60 * 60 * 1000; // in hours
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
-const PAGE_HISTORY_COOKIE = 'dumbpad_page_history';
+const PAGE_HISTORY_COOKIE = 'notemore_page_history';
 const PAGE_HISTORY_COOKIE_AGE = process.env.PAGE_HISTORY_COOKIE_AGE || 365; // defaults to 1 Year in days
 const pageHistoryCookieAge = PAGE_HISTORY_COOKIE_AGE * 24 * 60 * 60 * 1000;
 const MAX_FILENAME_COLLISION_ATTEMPTS = 100; // Maximum attempts to resolve filename collisions
@@ -472,7 +472,7 @@ function secureCompare(a, b) {
 
 // Main app route with PIN & CORS check
 app.get('/', originValidationMiddleware, (req, res) => {
-    const pin = process.env.DUMBPAD_PIN;
+    const pin = process.env.PIN_CODE;
     
     // Skip PIN if not configured
     if (!pin || !isValidPin(pin)) {
@@ -532,7 +532,7 @@ function isValidRedirectUrl(url) {
 // Login page route
 app.get('/login', (req, res) => {
     // If no PIN is required or user is already authenticated, redirect to main app
-    const pin = process.env.DUMBPAD_PIN;
+    const pin = process.env.PIN_CODE;
     if (!pin || !isValidPin(pin) || (req.cookies[COOKIE_NAME] && secureCompare(req.cookies[COOKIE_NAME], pin))) {
         // If user is already authenticated, redirect to the original URL if provided
         const redirectParam = req.query.redirect;
@@ -1101,7 +1101,7 @@ app.get('/api/notepads', async (req, res) => {
     try {
         const notepadsList = await loadNotepadsList();
         // Return the existing cookie value along with notes
-        const note_history = req.cookies.dumbpad_page_history || 'default';
+        const note_history = req.cookies.notemore_page_history || 'default';
         res.json({'notepads_list': notepadsList, 'note_history': note_history});
     } catch (err) {
         res.status(500).json({ error: 'Error reading notepads list' });

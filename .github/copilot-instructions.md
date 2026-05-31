@@ -47,7 +47,7 @@
   - **`Assets/`**: Holds all static assets.
     - `styles.css`: Main stylesheet for the application's layout and UI.
     - `markdown-styles.css`: Specific styles for rendering Markdown content.
-    - `dumbpad.svg` & `dumbpad.png`: Application logos.
+    - `notemore.svg` & `notemore.png`: Application logos.
   - **`managers/`**: Contains modules responsible for specific frontend features.
     - `collaboration.js`: Manages real-time collaboration, sending and receiving changes via WebSockets.
     - `confirmation.js`: Handles confirmation dialogs for actions like deleting files.

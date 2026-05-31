@@ -1,5 +1,5 @@
 /**
- * Configuration module for DumbPad
+ * Configuration module for NoteMore
  * Centralizes environment variable access and configuration settings
  */
 

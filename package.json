@@ -1,5 +1,5 @@
 {
-  "name": "dumbpad",
+  "name": "notemore",
   "version": "1.0.7",
   "description": "A simple notepad application",
   "main": "server.js",
